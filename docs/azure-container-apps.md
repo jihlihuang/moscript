@@ -201,6 +201,64 @@ export AZURE_BUILD_MODE="local"
 npm run deploy:azure
 ```
 
+## GitHub Actions CI/CD
+
+Repo 已包含 GitHub Actions workflow：
+
+```text
+.github/workflows/deploy-azure.yml
+```
+
+推送到 `main` 時會自動：
+
+1. 安裝依賴
+2. 執行 `npm run build`
+3. 使用 `az acr build` 在 Azure Container Registry 建置 `linux/amd64` image
+4. 更新 Azure Container App image
+
+到 GitHub repo 的 `Settings > Secrets and variables > Actions` 設定以下內容。
+
+Secrets：
+
+```text
+AZURE_CREDENTIALS
+```
+
+`AZURE_CREDENTIALS` 是 Azure service principal JSON，格式如下：
+
+```json
+{
+  "clientId": "<client-id>",
+  "clientSecret": "<client-secret>",
+  "subscriptionId": "<subscription-id>",
+  "tenantId": "<tenant-id>"
+}
+```
+
+Variables：
+
+```text
+AZURE_RESOURCE_GROUP=moscript-rg
+AZURE_CONTAINER_APP_NAME=moscript
+AZURE_ACR_NAME=moscriptacr2026
+AZURE_IMAGE_REPOSITORY=moscript
+DOCKER_PLATFORM=linux/amd64
+```
+
+建立 service principal 的範例：
+
+```bash
+SUBSCRIPTION_ID=$(az account show --query id --output tsv)
+
+az ad sp create-for-rbac \
+  --name moscript-github-actions \
+  --role contributor \
+  --scopes "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/moscript-rg" \
+  --sdk-auth
+```
+
+把輸出的 JSON 貼到 GitHub Secret `AZURE_CREDENTIALS`。
+
 這個指令只會更新應用程式 image。只有在 `public/glyphs` 或 `data/moscript.sqlite` 需要重新上傳時，才需要再執行：
 
 ```bash

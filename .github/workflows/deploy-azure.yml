@@ -1,0 +1,83 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: true
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+  AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+  AZURE_IMAGE_REPOSITORY: ${{ vars.AZURE_IMAGE_REPOSITORY }}
+  DOCKER_PLATFORM: ${{ vars.DOCKER_PLATFORM }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${AZURE_RESOURCE_GROUP:?Missing GitHub variable AZURE_RESOURCE_GROUP}"
+          : "${AZURE_CONTAINER_APP_NAME:?Missing GitHub variable AZURE_CONTAINER_APP_NAME}"
+          : "${AZURE_ACR_NAME:?Missing GitHub variable AZURE_ACR_NAME}"
+          : "${AZURE_IMAGE_REPOSITORY:?Missing GitHub variable AZURE_IMAGE_REPOSITORY}"
+          : "${DOCKER_PLATFORM:?Missing GitHub variable DOCKER_PLATFORM}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build check
+        run: npm run build
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build image in Azure Container Registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${GITHUB_SHA::7}"
+          IMAGE_NAME="${AZURE_ACR_NAME}.azurecr.io/${AZURE_IMAGE_REPOSITORY}:${IMAGE_TAG}"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+
+          az acr build \
+            --registry "${AZURE_ACR_NAME}" \
+            --image "${AZURE_IMAGE_REPOSITORY}:${IMAGE_TAG}" \
+            --platform "${DOCKER_PLATFORM}" \
+            .
+
+      - name: Deploy Container App
+        shell: bash
+        run: |
+          set -euo pipefail
+          az containerapp update \
+            --name "${AZURE_CONTAINER_APP_NAME}" \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --image "${IMAGE_NAME}"
+
+      - name: Show deployed image
+        run: echo "Deployed ${IMAGE_NAME}"
