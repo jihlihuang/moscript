@@ -42,7 +42,7 @@ function onlyChinese(value: string) {
   return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
 }
 
-const commonScriptTypes = ["篆", "隸", "楷", "行", "草", "章草", "行草", "未標註"];
+const commonScriptTypes = ["篆", "隸", "楷", "行", "草", "未標註"];
 
 export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
