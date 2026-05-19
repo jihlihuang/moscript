@@ -314,24 +314,26 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-3">
-            <LogoMark />
-            <div>
-              <h1 className="text-2xl font-bold font-serif">後台管理</h1>
-              <p className="text-sm text-stone-500">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
+              <div className="min-w-0">
+                <h1 className="font-serif text-xl font-bold sm:text-2xl">後台管理</h1>
+                <p className="truncate text-xs text-stone-500 sm:text-sm">
                 管理字圖資料、手動上傳、檢查資料庫數量{user ? `｜${user.email}` : ""}
-              </p>
+                </p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <form action="/api/auth/logout?returnTo=/" method="post">
-              <button className="inline-flex items-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+            <form action="/api/auth/logout?returnTo=/" method="post" className="contents sm:block">
+              <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm">
                 <LogOut className="h-4 w-4" />
                 登出
               </button>
             </form>
-            <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white">
+            <Link href="/" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white sm:px-4 sm:text-sm">
               <ArrowLeft className="h-4 w-4" />
               回前台
             </Link>
@@ -340,10 +342,10 @@ export default function AdminPage() {
       </header>
 
       {isForbidden && (
-        <div className="mx-auto mt-6 max-w-7xl px-4">
-          <div className="rounded-2xl border border-red-800 bg-red-950/50 p-6 text-center">
-            <h2 className="text-xl font-bold text-red-500 mb-2">權限不足</h2>
-            <p className="text-red-300">
+        <div className="mx-auto mt-4 max-w-7xl px-3 sm:mt-6 sm:px-4">
+          <div className="rounded-2xl border border-red-800 bg-red-950/50 p-4 text-center sm:p-6">
+            <h2 className="mb-2 text-lg font-bold text-red-500 sm:text-xl">權限不足</h2>
+            <p className="text-sm text-red-300 sm:text-base">
               您目前的帳號沒有後台管理權限，無法執行新增、修改、刪除等操作。
               若需權限請聯絡系統管理員將您的 Email 加入白名單。
             </p>
@@ -351,11 +353,11 @@ export default function AdminPage() {
         </div>
       )}
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[360px_1fr]">
-        <aside className="space-y-6">
-          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+      <section className="mx-auto grid max-w-7xl gap-4 px-3 py-4 sm:px-4 sm:py-6 lg:grid-cols-[360px_1fr] lg:gap-6">
+        <aside className="space-y-4 sm:space-y-6">
+          <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:rounded-3xl sm:p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold">資料庫狀態</h2>
+              <h2 className="text-lg font-bold sm:text-xl">資料庫狀態</h2>
               <button
                 onClick={loadStats}
                 disabled={isStatsLoading}
@@ -366,20 +368,20 @@ export default function AdminPage() {
               </button>
             </div>
             {stats ? (
-              <div className="grid gap-3">
-                <div className="rounded-2xl bg-stone-50 p-4">
-                  <div className="text-sm text-stone-500">字圖總數</div>
-                  <div className="text-3xl font-bold">{stats.totalGlyphs}</div>
+              <div className="grid grid-cols-3 gap-2 lg:grid-cols-1 lg:gap-3">
+                <div className="rounded-2xl bg-stone-50 p-3 sm:p-4">
+                  <div className="text-xs text-stone-500 sm:text-sm">字圖總數</div>
+                  <div className="text-2xl font-bold sm:text-3xl">{stats.totalGlyphs}</div>
                 </div>
-                <div className="rounded-2xl bg-stone-50 p-4">
-                  <div className="text-sm text-stone-500">不同字數</div>
-                  <div className="text-3xl font-bold">{stats.totalChars}</div>
+                <div className="rounded-2xl bg-stone-50 p-3 sm:p-4">
+                  <div className="text-xs text-stone-500 sm:text-sm">不同字數</div>
+                  <div className="text-2xl font-bold sm:text-3xl">{stats.totalChars}</div>
                 </div>
-                <div className="rounded-2xl bg-stone-50 p-4">
-                  <div className="text-sm text-stone-500">集字作品</div>
-                  <div className="text-3xl font-bold">{stats.totalCollections}</div>
+                <div className="rounded-2xl bg-stone-50 p-3 sm:p-4">
+                  <div className="text-xs text-stone-500 sm:text-sm">集字作品</div>
+                  <div className="text-2xl font-bold sm:text-3xl">{stats.totalCollections}</div>
                 </div>
-                <div className="rounded-2xl bg-stone-50 p-4">
+                <div className="col-span-3 rounded-2xl bg-stone-50 p-3 sm:p-4 lg:col-span-1">
                   <div className="mb-2 text-sm text-stone-500">書體分布</div>
                   <div className="space-y-2">
                     {stats.scripts.map((item) => (
@@ -398,10 +400,10 @@ export default function AdminPage() {
             )}
           </section>
 
-          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+          <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:rounded-3xl sm:p-5">
             <div className="mb-4 flex items-center gap-2">
               <ImagePlus className="h-5 w-5 text-red-600" />
-              <h2 className="text-xl font-bold">手動上傳字圖</h2>
+              <h2 className="text-lg font-bold sm:text-xl">手動上傳字圖</h2>
             </div>
             <form onSubmit={upload} className="space-y-3">
               <input
@@ -475,18 +477,18 @@ export default function AdminPage() {
           </section>
         </aside>
 
-        <section className="rounded-3xl border border-stone-200 bg-white p-5">
+        <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:rounded-3xl sm:p-5">
           <div className="mb-4 flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <Database className="h-5 w-5 text-red-600" />
-              <h2 className="text-xl font-bold">字庫查詢</h2>
+              <h2 className="text-lg font-bold sm:text-xl">字庫查詢</h2>
             </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void search();
               }}
-              className="grid gap-2 lg:grid-cols-[1fr_180px_auto_auto]"
+              className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_180px_auto_auto]"
             >
               <input
                 value={keyword}
@@ -505,7 +507,7 @@ export default function AdminPage() {
                 }}
                 placeholder="輸入中文，例如：小橋流水"
                 disabled={isSearching}
-                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
+                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:py-2"
                 autoComplete="off"
               />
               <input
@@ -513,12 +515,12 @@ export default function AdminPage() {
                 onChange={(e) => setQueryAuthor(e.target.value)}
                 placeholder="作者"
                 disabled={isSearching}
-                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
+                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:py-2"
               />
               <button
                 type="submit"
                 disabled={isSearching || !hasSearchKeyword}
-                className="inline-flex items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0"
               >
                 {isSearching ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 {isSearching ? "查詢中" : "查詢"}
@@ -527,7 +529,7 @@ export default function AdminPage() {
                 type="button"
                 onClick={clearSearchFilters}
                 disabled={isSearching}
-                className="rounded-xl border border-stone-300 px-4 py-2 font-bold text-stone-600 hover:border-zinc-500 hover:text-stone-900"
+                className="min-h-11 rounded-xl border border-stone-300 px-4 py-2 font-bold text-stone-600 hover:border-zinc-500 hover:text-stone-900 sm:min-h-0"
               >
                 清除
               </button>
@@ -565,7 +567,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          <div className="relative min-h-[280px]">
+          <div className="relative min-h-[260px] sm:min-h-[280px]">
           {isSearching && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-white/80 backdrop-blur-sm">
               <div className="flex animate-pulse items-center gap-2 opacity-80">
@@ -577,7 +579,7 @@ export default function AdminPage() {
           )}
 
           {glyphs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-stone-300 p-10 text-center text-stone-500">
+            <div className="rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500 sm:p-10 sm:text-base">
               {isSearching ? "正在讀取字圖..." : "輸入字後，進行查詢！"}
             </div>
           ) : (
@@ -626,10 +628,10 @@ export default function AdminPage() {
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
               {visibleGlyphs.map((glyph) => (
-                <div key={glyph.id} className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
-                  <GlyphImage glyph={glyph} size={108} />
+                <div key={glyph.id} className="rounded-2xl border border-stone-200 bg-stone-50 p-2 sm:p-3">
+                  <GlyphImage glyph={glyph} size={108} containerClassName="h-[96px] w-full sm:h-[108px] sm:w-full" />
                   {editingId === glyph.id && editDraft ? (
                     <div className="mt-3 space-y-2">
                       <input

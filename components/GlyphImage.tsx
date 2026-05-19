@@ -9,11 +9,19 @@ export type GlyphLike = {
   workTitle?: string | null;
 };
 
-export function GlyphImage({ glyph, size = 96 }: { glyph: GlyphLike; size?: number }) {
+export function GlyphImage({
+  glyph,
+  size = 96,
+  containerClassName,
+}: {
+  glyph: GlyphLike;
+  size?: number;
+  containerClassName?: string;
+}) {
   return (
     <div
-      className="flex items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-white"
-      style={{ width: size, height: size }}
+      className={`flex items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-white ${containerClassName ?? ""}`}
+      style={containerClassName ? undefined : { width: size, height: size }}
     >
       <Image
         src={glyph.imageUrl}

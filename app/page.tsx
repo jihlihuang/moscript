@@ -221,8 +221,8 @@ export default function FrontStagePage() {
     void loadAvailableScripts();
   }, [author, q, queryChars.length]);
 
-  async function searchGlyphs(nextScriptType = scriptType, preservePosition = false) {
-    const cleanedQ = onlyChinese(q);
+  async function searchGlyphs(nextScriptType = scriptType, preservePosition = false, nextQ = q) {
+    const cleanedQ = onlyChinese(nextQ);
     if (cleanedQ !== q) {
       setQ(cleanedQ);
       setSelected([]);
@@ -309,7 +309,13 @@ export default function FrontStagePage() {
       setScriptType(loadedScriptType);
       setSelected(selectedGlyphs);
       setActivePosition(null);
-      setMessage("已載入集字作品，可繼續查詢或調整字圖");
+
+      const params = new URLSearchParams({ q: onlyChinese(json.collection.text) });
+      if (loadedScriptType) params.set("scriptType", loadedScriptType);
+      const glyphsRes = await fetch(`/api/glyphs?${params.toString()}`);
+      const glyphsJson = (await glyphsRes.json()) as ApiResult;
+      setData(glyphsJson);
+      setMessage("已載入集字作品，並帶出可替換的字圖");
 
       const url = new URL(window.location.href);
       url.searchParams.delete("collectionId");
@@ -380,28 +386,29 @@ export default function FrontStagePage() {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <div className="flex flex-wrap items-center gap-4">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-4">
+          <div className="min-w-0">
             <div className="flex items-center gap-3">
               <LogoMark
                 onClick={handleLogoClick}
                 title={logoClickCount > 0 ? `距離解鎖還有 ${10 - logoClickCount} 步` : undefined}
+                imageClassName="h-10 w-10 sm:h-12 sm:w-12"
               />
               <div>
                 <h1 className="sr-only">墨跡</h1>
-                <p className="text-sm font-medium text-stone-500">從字形到心境，重新認識書法之美</p>
+                <p className="text-xs font-medium leading-snug text-stone-500 sm:text-sm">從字形到心境，重新認識書法之美</p>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
             {user ? (
-              <form action="/api/auth/logout?returnTo=/" method="post" onSubmit={handleLogout} className="flex items-center gap-2">
+              <form action="/api/auth/logout?returnTo=/" method="post" onSubmit={handleLogout} className="contents sm:flex sm:items-center sm:gap-2">
                 <span className="hidden max-w-[220px] truncate text-sm text-stone-500 md:inline">
                   {user.email}
                 </span>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
                 >
                   <LogOut className="h-4 w-4" />
                   登出
@@ -410,7 +417,7 @@ export default function FrontStagePage() {
             ) : (
               <Link
                 href="/api/auth/google?returnTo=/"
-                className="inline-flex items-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
               >
                 <LogIn className="h-4 w-4" />
                 Google 登入
@@ -418,7 +425,7 @@ export default function FrontStagePage() {
             )}
             <Link
               href="/collections"
-              className="inline-flex items-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
             >
               <Images className="h-4 w-4" />
               集字作品
@@ -426,7 +433,7 @@ export default function FrontStagePage() {
             {isAdminVisible && (
               <Link
                 href="/admin"
-                className="inline-flex items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white hover:bg-stone-900"
+                className="col-span-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 sm:col-span-1 sm:px-4 sm:text-sm"
               >
                 <Database className="h-4 w-4" />
                 後台管理
@@ -436,15 +443,15 @@ export default function FrontStagePage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-7xl px-4 py-6">
-        <div className="space-y-6">
-          <section className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+      <section className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
+        <div className="space-y-4 sm:space-y-6">
+          <section className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm sm:rounded-3xl sm:p-4">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void searchGlyphs();
               }}
-              className="grid gap-3 lg:grid-cols-[1fr_160px_auto]"
+              className="grid gap-2 sm:gap-3 lg:grid-cols-[1fr_160px_auto]"
             >
               <label className="relative block">
                 <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
@@ -468,7 +475,7 @@ export default function FrontStagePage() {
                     setSelected([]);
                     setActivePosition(null);
                   }}
-                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 py-3 pl-10 pr-4 text-lg outline-none focus:border-red-700"
+                  className="w-full rounded-xl border border-stone-300 bg-stone-50 py-3 pl-10 pr-3 text-base outline-none focus:border-red-700 sm:rounded-2xl sm:pr-4 sm:text-lg"
                   placeholder="輸入中文，例如：小橋流水人家"
                   inputMode="text"
                   autoComplete="off"
@@ -477,27 +484,27 @@ export default function FrontStagePage() {
               <input
                 value={author}
                 onChange={(e) => setAuthor(e.target.value)}
-                className="rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none focus:border-red-700"
+                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
                 placeholder="作者"
               />
               <button
                 type="submit"
                 disabled={loading}
-                className="rounded-2xl bg-red-800 px-6 py-3 font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-xl bg-red-800 px-6 py-3 font-bold text-white hover:bg-red-700 disabled:opacity-50 sm:rounded-2xl"
               >
                 {loading ? "搜尋中" : "搜尋"}
               </button>
             </form>
-            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-3">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 sm:mt-4">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5 text-red-600" />
                   <div>
                     <h2 className="font-bold font-serif">目前集字</h2>
-                    <p className="text-sm text-stone-500">點選單字可聚焦搜尋結果</p>
+                    <p className="text-xs text-stone-500 sm:text-sm">點選單字可聚焦搜尋結果</p>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
                   {activePosition !== null && (
                     <button
                       type="button"
@@ -521,7 +528,7 @@ export default function FrontStagePage() {
               {queryChars.length === 0 ? (
                 <p className="text-sm text-stone-500">請輸入文字。</p>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-3 gap-2 min-[420px]:grid-cols-4 sm:flex sm:flex-wrap">
                   {queryChars.map((char, index) => {
                     const glyph = selected.find((item) => item.position === index);
                     const active = activePosition === index;
@@ -538,9 +545,9 @@ export default function FrontStagePage() {
                           }`}
                         >
                           {glyph ? (
-                            <GlyphImage glyph={glyph} size={110} />
+                            <GlyphImage glyph={glyph} size={110} containerClassName="h-[82px] w-full sm:h-[110px] sm:w-[110px]" />
                           ) : (
-                            <div className="flex h-[110px] w-[110px] items-center justify-center rounded-xl border border-dashed border-stone-300 font-serif text-5xl text-zinc-600">
+                            <div className="flex h-[82px] w-full items-center justify-center rounded-xl border border-dashed border-stone-300 font-serif text-4xl text-zinc-600 sm:h-[110px] sm:w-[110px] sm:text-5xl">
                               {char}
                             </div>
                           )}
@@ -636,7 +643,7 @@ export default function FrontStagePage() {
             </div>
           </section>
 
-          <section className="relative min-h-[400px] rounded-3xl border border-stone-200 bg-white p-4">
+          <section className="relative min-h-[320px] rounded-2xl border border-stone-200 bg-white p-3 sm:min-h-[400px] sm:rounded-3xl sm:p-4">
             {loading && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-3xl bg-white/80 backdrop-blur-sm">
                 <div className="flex animate-pulse items-center gap-2 opacity-80">
@@ -646,7 +653,7 @@ export default function FrontStagePage() {
                 <p className="mt-4 font-serif text-lg font-bold tracking-widest text-stone-600">研墨中...</p>
               </div>
             )}
-            <div className="mb-4 flex flex-wrap items-center gap-2 text-stone-600">
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-stone-600 sm:text-base">
               <Filter className="h-5 w-5" />
               <span>搜尋結果</span>
               {data && (
@@ -671,7 +678,7 @@ export default function FrontStagePage() {
             </div>
 
             {!data && (
-              <div className="rounded-2xl border border-dashed border-stone-300 p-10 text-center text-stone-500">
+              <div className="rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500 sm:p-10 sm:text-base">
                 先按「搜尋」，系統會依每個字顯示可用的書法字圖。
               </div>
             )}
@@ -683,14 +690,14 @@ export default function FrontStagePage() {
                   {glyphs.length === 0 ? (
                     <div className="rounded-2xl bg-stone-50 p-6 text-stone-500">目前資料庫沒有這個字。</div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-6">
                       {glyphs.map((glyph) => (
                         <button
                           key={glyph.id}
                           onClick={() => pickGlyph(glyph, index)}
-                          className="rounded-2xl border border-stone-200 bg-stone-50 p-3 text-left hover:border-red-700"
+                          className="rounded-2xl border border-stone-200 bg-stone-50 p-2 text-left hover:border-red-700 sm:p-3"
                         >
-                          <GlyphImage glyph={glyph} size={110} />
+                          <GlyphImage glyph={glyph} size={110} containerClassName="h-[96px] w-full sm:h-[110px] sm:w-full" />
                           <div className="mt-2 text-sm font-medium text-stone-700">{glyph.author || "佚名"}</div>
                           <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
                         </button>
