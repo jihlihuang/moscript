@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Check, Database, Filter, Images, LogIn, LogOut, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, Images, LogIn, LogOut, RefreshCw, Search, Trash2 } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
+import { LogoMark } from "@/components/LogoMark";
 
 type GlyphDto = GlyphLike & {
   source?: string | null;
@@ -33,6 +34,21 @@ type CurrentUser = {
   picture: string | null;
 };
 
+type CollectionSavePayload = {
+  title: string;
+  text: string;
+  author?: string;
+  scriptType?: string;
+  selectedGlyphs?: SelectedGlyph[];
+  items: {
+    glyphId: number;
+    char: string;
+    position: number;
+  }[];
+};
+
+const pendingCollectionKey = "moscript_pending_collection";
+
 function onlyChinese(value: string) {
   return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
 }
@@ -47,10 +63,14 @@ export default function FrontStagePage() {
   const [selected, setSelected] = useState<SelectedGlyph[]>([]);
   const [activePosition, setActivePosition] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isSavingCollection, setIsSavingCollection] = useState(false);
   const [message, setMessage] = useState("");
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
+  const pendingSaveStartedRef = useRef(false);
+  const collectionLoadStartedRef = useRef(false);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -111,15 +131,74 @@ export default function FrontStagePage() {
     [availableScripts]
   );
 
+  const saveResult = useMemo(() => {
+    if (message.startsWith("已儲存：")) {
+      return {
+        type: "saved" as const,
+        url: message.replace("已儲存：", ""),
+        title: "集字作品已儲存",
+        description: "已建立新的集字作品，可以前往作品頁查看完整內容。",
+      };
+    }
+    if (message.startsWith("已存在：")) {
+      return {
+        type: "duplicate" as const,
+        url: message.replace("已存在：", ""),
+        title: "這份集字作品已存在",
+        description: "系統找到相同文字與相同字圖選擇，已為你保留原本那一筆。",
+      };
+    }
+    return null;
+  }, [message]);
+
   useEffect(() => {
     async function loadCurrentUser() {
       const res = await fetch("/api/auth/me");
       const json = (await res.json()) as { user: CurrentUser | null };
       setUser(json.user);
+      setIsAuthChecked(true);
     }
 
     void loadCurrentUser();
   }, []);
+
+  useEffect(() => {
+    if (!isAuthChecked || !user || pendingSaveStartedRef.current) return;
+
+    const rawPendingCollection = localStorage.getItem(pendingCollectionKey);
+    if (!rawPendingCollection) return;
+
+    try {
+      const payload = JSON.parse(rawPendingCollection) as CollectionSavePayload;
+      if (!payload.text || payload.items.length === 0) {
+        localStorage.removeItem(pendingCollectionKey);
+        return;
+      }
+
+      pendingSaveStartedRef.current = true;
+      restoreWorkspaceFromPayload(payload);
+      setMessage("登入完成，正在儲存集字作品...");
+      void saveCollectionPayload(payload, { clearPendingOnSuccess: true });
+    } catch {
+      localStorage.removeItem(pendingCollectionKey);
+    }
+  }, [isAuthChecked, user]);
+
+  useEffect(() => {
+    if (!isAuthChecked || collectionLoadStartedRef.current) return;
+
+    const url = new URL(window.location.href);
+    const collectionId = url.searchParams.get("collectionId");
+    if (!collectionId) return;
+
+    if (!user) {
+      window.location.href = `/api/auth/google?returnTo=${encodeURIComponent(`/?collectionId=${collectionId}`)}`;
+      return;
+    }
+
+    collectionLoadStartedRef.current = true;
+    void loadCollectionToWorkspace(collectionId);
+  }, [isAuthChecked, user]);
 
   useEffect(() => {
     async function loadAvailableScripts() {
@@ -184,38 +263,118 @@ export default function FrontStagePage() {
     }
   }
 
+  function restoreWorkspaceFromPayload(payload: CollectionSavePayload) {
+    setQ(payload.text);
+    setAuthor(payload.author ?? "");
+    setScriptType(payload.scriptType ?? "");
+    setSelected(payload.selectedGlyphs ?? []);
+    setActivePosition(null);
+  }
+
+  async function loadCollectionToWorkspace(collectionId: string) {
+    setLoading(true);
+    setMessage("");
+    try {
+      const res = await fetch(`/api/collections/${collectionId}`);
+      const json = await res.json();
+      if (!res.ok) {
+        setMessage(json.error ?? "載入集字作品失敗");
+        return;
+      }
+
+      const selectedGlyphs = json.items.map((item: {
+        position: number;
+        char: string;
+        glyph_id: number;
+        author: string | null;
+        script_type: string | null;
+        work_title: string | null;
+        image_url: string;
+        source: string | null;
+        license: string | null;
+      }) => ({
+        id: item.glyph_id,
+        char: item.char,
+        imageUrl: item.image_url,
+        author: item.author,
+        scriptType: item.script_type,
+        workTitle: item.work_title,
+        source: item.source,
+        license: item.license,
+        position: item.position,
+      }));
+      const loadedScriptType = selectedGlyphs[0]?.scriptType ?? "";
+      setQ(json.collection.text);
+      setAuthor("");
+      setScriptType(loadedScriptType);
+      setSelected(selectedGlyphs);
+      setActivePosition(null);
+      setMessage("已載入集字作品，可繼續查詢或調整字圖");
+
+      const url = new URL(window.location.href);
+      url.searchParams.delete("collectionId");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveCollectionPayload(
+    payload: CollectionSavePayload,
+    options: { clearPendingOnSuccess?: boolean } = {}
+  ) {
+    setIsSavingCollection(true);
+    try {
+      const res = await fetch("/api/collections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.setItem(pendingCollectionKey, JSON.stringify(payload));
+          window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/")}`;
+          return;
+        }
+        setMessage(json.error ?? "儲存失敗");
+        return;
+      }
+
+      if (options.clearPendingOnSuccess) {
+        localStorage.removeItem(pendingCollectionKey);
+      }
+      setMessage(json.duplicate ? `已存在：${json.url}` : `已儲存：${json.url}`);
+    } finally {
+      setIsSavingCollection(false);
+    }
+  }
+
   async function saveCollection() {
+    if (isSavingCollection) return;
+    const payload: CollectionSavePayload = {
+      title: q,
+      text: q,
+      author,
+      scriptType,
+      selectedGlyphs: selected,
+      items: selected.map((item) => ({
+        glyphId: item.id,
+        char: item.char,
+        position: item.position,
+      })),
+    };
+
     setMessage("");
     if (!user) {
+      localStorage.setItem(pendingCollectionKey, JSON.stringify(payload));
+      setMessage("請先登入，登入完成後會自動儲存集字作品...");
       window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/")}`;
       return;
     }
 
-    const res = await fetch("/api/collections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: q,
-        text: q,
-        items: selected.map((item) => ({
-          glyphId: item.id,
-          char: item.char,
-          position: item.position,
-        })),
-      }),
-    });
-
-    const json = await res.json();
-    if (!res.ok) {
-      if (res.status === 401) {
-        window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/")}`;
-        return;
-      }
-      setMessage(json.error ?? "儲存失敗");
-      return;
-    }
-
-    setMessage(`已儲存：${json.url}`);
+    await saveCollectionPayload(payload);
   }
 
   return (
@@ -223,16 +382,16 @@ export default function FrontStagePage() {
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div 
-              className="flex items-center -ml-2 cursor-pointer select-none"
-              onClick={handleLogoClick}
-              title={logoClickCount > 0 ? `距離解鎖還有 ${10 - logoClickCount} 步` : undefined}
-            >
-              <img src="/glyphs/%E5%A2%A8/%E7%8E%8B%E9%90%B8_%E8%A1%8C_%E7%8E%8B%E9%90%B8%20%E8%A1%8C%E6%9B%B8_0001.gif" alt="墨" className="h-12 w-12 object-contain mix-blend-multiply pointer-events-none" />
-              <img src="/glyphs/%E8%BF%B9/%E7%8E%8B%E9%90%B8_%E8%A1%8C_%E7%8E%8B%E9%90%B8%20%E8%A1%8C%E6%9B%B8_0001.gif" alt="跡" className="h-12 w-12 object-contain mix-blend-multiply pointer-events-none" />
-              <h1 className="sr-only">墨跡</h1>
+            <div className="flex items-center gap-3">
+              <LogoMark
+                onClick={handleLogoClick}
+                title={logoClickCount > 0 ? `距離解鎖還有 ${10 - logoClickCount} 步` : undefined}
+              />
+              <div>
+                <h1 className="sr-only">墨跡</h1>
+                <p className="text-sm font-medium text-stone-500">從字形到心境，重新認識書法之美</p>
+              </div>
             </div>
-            <p className="text-sm font-medium text-stone-500">從字形到心境，重新認識書法之美</p>
           </div>
           <div className="flex items-center gap-2">
             {user ? (
@@ -350,10 +509,11 @@ export default function FrontStagePage() {
                   )}
                   <button
                     onClick={saveCollection}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-sm font-bold text-white hover:bg-stone-900"
+                    disabled={isSavingCollection}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-sm font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Check className="h-4 w-4" />
-                    儲存集字作品
+                    {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    {isSavingCollection ? "儲存中" : "儲存集字作品"}
                   </button>
                 </div>
               </div>
@@ -400,13 +560,52 @@ export default function FrontStagePage() {
               )}
 
               {message && (
-                <div className="mt-3 rounded-2xl border border-stone-200 bg-white p-3 text-sm text-stone-600">
-                  {message.startsWith("已儲存") ? (
-                    <Link href={message.replace("已儲存：", "")} className="text-red-500 underline">
-                      {message}
-                    </Link>
-                  ) : message}
-                </div>
+                saveResult ? (
+                  <div
+                    className={`mt-3 rounded-2xl border p-4 shadow-sm ${
+                      saveResult.type === "duplicate"
+                        ? "border-amber-300 bg-amber-50 text-amber-950"
+                        : "border-emerald-300 bg-emerald-50 text-emerald-950"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-0.5 rounded-full p-2 ${
+                            saveResult.type === "duplicate"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-emerald-100 text-emerald-700"
+                          }`}
+                        >
+                          {saveResult.type === "duplicate" ? (
+                            <AlertTriangle className="h-5 w-5" />
+                          ) : (
+                            <CheckCircle2 className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold">{saveResult.title}</div>
+                          <p className="mt-1 text-sm opacity-80">{saveResult.description}</p>
+                        </div>
+                      </div>
+                      <Link
+                        href={saveResult.url}
+                        className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white ${
+                          saveResult.type === "duplicate"
+                            ? "bg-amber-700 hover:bg-amber-800"
+                            : "bg-emerald-700 hover:bg-emerald-800"
+                        }`}
+                      >
+                        查看作品
+                        <ExternalLink className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-2xl border border-stone-200 bg-white p-3 text-sm text-stone-600">
+                    {message}
+                  </div>
+                )
               )}
             </div>
             <div className="mt-3 overflow-x-auto">

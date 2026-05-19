@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Database, ImagePlus, LogOut, Pencil, RefreshCw, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
+import { LogoMark } from "@/components/LogoMark";
 
 type Stats = {
   totalGlyphs: number;
@@ -314,11 +315,14 @@ export default function AdminPage() {
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <div>
-            <h1 className="text-2xl font-bold font-serif">MoScript 後台</h1>
-            <p className="text-sm text-stone-500">
-              管理字圖資料、手動上傳、檢查資料庫數量{user ? `｜${user.email}` : ""}
-            </p>
+          <div className="flex items-center gap-3">
+            <LogoMark />
+            <div>
+              <h1 className="text-2xl font-bold font-serif">後台管理</h1>
+              <p className="text-sm text-stone-500">
+                管理字圖資料、手動上傳、檢查資料庫數量{user ? `｜${user.email}` : ""}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <form action="/api/auth/logout?returnTo=/" method="post">

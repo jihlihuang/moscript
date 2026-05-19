@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, BookOpen } from "lucide-react";
+import { ArrowLeft, BookOpen, Search } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 import { GlyphImage } from "@/components/GlyphImage";
+import { LogoMark } from "@/components/LogoMark";
 
 export const dynamic = "force-dynamic";
 
@@ -75,9 +76,12 @@ export default async function CollectionsPage() {
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div>
-            <h1 className="text-2xl font-bold font-serif">集字作品</h1>
-            <p className="text-sm text-stone-500">查看 {user.email} 儲存的集字內容</p>
+          <div className="flex items-center gap-3">
+            <LogoMark />
+            <div>
+              <h1 className="text-2xl font-bold font-serif">集字作品</h1>
+              <p className="text-sm text-stone-500">查看 {user.email} 儲存的集字內容</p>
+            </div>
           </div>
           <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white">
             <ArrowLeft className="h-4 w-4" />
@@ -141,7 +145,16 @@ export default async function CollectionsPage() {
                   )}
                   <div className="relative z-20 mt-auto flex items-center justify-between text-sm text-stone-500">
                     <span className="line-clamp-1 pr-3">{collection.text}｜{collection.item_count} 個字圖</span>
-                    <DeleteCollectionButton id={collection.id} />
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Link
+                        href={`/?collectionId=${collection.id}`}
+                        className="inline-flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1 font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
+                      >
+                        <Search className="h-3 w-3" />
+                        載入
+                      </Link>
+                      <DeleteCollectionButton id={collection.id} />
+                    </div>
                   </div>
                 </div>
               );

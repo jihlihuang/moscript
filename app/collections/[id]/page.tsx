@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { GlyphImage } from "@/components/GlyphImage";
 import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
+import { LogoMark } from "@/components/LogoMark";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -65,11 +66,18 @@ export default async function CollectionPage({ params }: Params) {
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div>
-            <h1 className="text-2xl font-bold font-serif">{collection.title}</h1>
-            <p className="text-sm text-stone-500">集字作品｜{collection.created_at}</p>
+          <div className="flex items-center gap-3">
+            <LogoMark />
+            <div>
+              <h1 className="text-2xl font-bold font-serif">{collection.title}</h1>
+              <p className="text-sm text-stone-500">集字作品｜{collection.created_at}</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link href={`/?collectionId=${collection.id}`} className="inline-flex items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-stone-900">
+              <Search className="h-4 w-4" />
+              載入到首頁
+            </Link>
             <DeleteCollectionButton id={collection.id} redirectOnSuccess={true} />
             <Link href="/collections" className="inline-flex items-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
               <ArrowLeft className="h-4 w-4" />

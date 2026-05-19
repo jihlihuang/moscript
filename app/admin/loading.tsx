@@ -1,13 +1,17 @@
 import { Database, RefreshCw } from "lucide-react";
+import { LogoMark } from "@/components/LogoMark";
 
 export default function AdminLoading() {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <div>
-            <h1 className="font-serif text-2xl font-bold">MoScript 後台</h1>
-            <p className="text-sm text-stone-500">管理字圖資料、手動上傳、檢查資料庫數量</p>
+          <div className="flex items-center gap-3">
+            <LogoMark />
+            <div>
+              <h1 className="font-serif text-2xl font-bold">後台管理</h1>
+              <p className="text-sm text-stone-500">管理字圖資料、手動上傳、檢查資料庫數量</p>
+            </div>
           </div>
         </div>
       </header>

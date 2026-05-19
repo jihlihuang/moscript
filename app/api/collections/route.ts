@@ -10,6 +10,27 @@ type IncomingItem = {
   position: number;
 };
 
+type NormalizedItem = {
+  glyphId: number;
+  char: string;
+  position: number;
+};
+
+function normalizeItems(items: IncomingItem[]) {
+  return items
+    .map((item) => ({
+      glyphId: Number(item.glyphId),
+      char: String(item.char || "").trim(),
+      position: Number(item.position),
+    }))
+    .filter((item) => Number.isInteger(item.glyphId) && Number.isInteger(item.position) && item.char)
+    .sort((a, b) => a.position - b.position);
+}
+
+function itemsSignature(items: NormalizedItem[]) {
+  return JSON.stringify(items.map((item) => [item.position, item.char, item.glyphId]));
+}
+
 export async function GET(req: NextRequest) {
   const user = requireRequestUser(req);
   if (!user) return unauthorized();
@@ -33,7 +54,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const title = String(body.title || body.text || "未命名集字作品").trim();
   const text = String(body.text || "").trim();
-  const items = (body.items || []) as IncomingItem[];
+  const items = normalizeItems((body.items || []) as IncomingItem[]);
 
   if (!text || items.length === 0) {
     return NextResponse.json(
@@ -45,6 +66,34 @@ export async function POST(req: NextRequest) {
   const db = await getDb();
 
   const save = db.transaction(() => {
+    const incomingSignature = itemsSignature(items);
+    const candidates = db.prepare(`
+      SELECT c.id
+      FROM collections c
+      JOIN (
+        SELECT collection_id, COUNT(*) AS item_count
+        FROM collection_items
+        GROUP BY collection_id
+      ) ci_count ON ci_count.collection_id = c.id
+      WHERE c.user_id = ? AND c.text = ? AND ci_count.item_count = ?
+      ORDER BY c.id DESC
+      LIMIT 100
+    `).all(user.id, text, items.length) as { id: number }[];
+
+    const getCandidateItems = db.prepare(`
+      SELECT glyph_id AS glyphId, char, position
+      FROM collection_items
+      WHERE collection_id = ?
+      ORDER BY position ASC
+    `);
+
+    for (const candidate of candidates) {
+      const candidateItems = getCandidateItems.all(candidate.id) as NormalizedItem[];
+      if (itemsSignature(candidateItems) === incomingSignature) {
+        return { id: candidate.id, duplicate: true };
+      }
+    }
+
     const collection = db
       .prepare("INSERT INTO collections (user_id, user_email, user_name, title, text) VALUES (?, ?, ?, ?, ?)")
       .run(user.id, user.email, user.name, title, text);
@@ -59,10 +108,16 @@ export async function POST(req: NextRequest) {
       insertItem.run(collectionId, item.glyphId, item.position, item.char);
     }
 
-    return collectionId;
+    return { id: collectionId, duplicate: false };
   });
 
-  const id = save();
-  await syncDbToBlob();
-  return NextResponse.json({ id, url: `/collections/${id}` });
+  const result = save();
+  if (!result.duplicate) {
+    await syncDbToBlob();
+  }
+  return NextResponse.json({
+    id: result.id,
+    url: `/collections/${result.id}`,
+    duplicate: result.duplicate,
+  });
 }
