@@ -63,6 +63,11 @@ export default function AdminPage() {
   const [activeChar, setActiveChar] = useState<string | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isForbidden, setIsForbidden] = useState(false);
+  const [isStatsLoading, setIsStatsLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [savingGlyphId, setSavingGlyphId] = useState<number | null>(null);
+  const [deletingGlyphId, setDeletingGlyphId] = useState<number | null>(null);
 
   const glyphsByChar = useMemo(
     () =>
@@ -83,6 +88,7 @@ export default function AdminPage() {
   }, [glyphsByChar, keyword]);
 
   const visibleGlyphs = activeChar ? glyphsByChar[activeChar] ?? [] : glyphs;
+  const hasSearchKeyword = onlyChinese(keyword).length > 0;
 
   const scriptFilters = useMemo(
     () => ["", ...(stats?.scripts.filter((script) => script.count > 0).map((script) => script.label) ?? [])],
@@ -102,17 +108,22 @@ export default function AdminPage() {
   );
 
   async function loadStats() {
-    const res = await fetch("/api/admin/stats");
-    if (res.status === 401) {
-      window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/admin")}`;
-      return;
+    setIsStatsLoading(true);
+    try {
+      const res = await fetch("/api/admin/stats");
+      if (res.status === 401) {
+        window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/admin")}`;
+        return;
+      }
+      if (res.status === 403) {
+        setIsForbidden(true);
+        setMessage("此帳號沒有後台權限");
+        return;
+      }
+      setStats(await res.json());
+    } finally {
+      setIsStatsLoading(false);
     }
-    if (res.status === 403) {
-      setIsForbidden(true);
-      setMessage("此帳號沒有後台權限");
-      return;
-    }
-    setStats(await res.json());
   }
 
   async function search(nextScriptType = queryScriptType) {
@@ -123,21 +134,32 @@ export default function AdminPage() {
     if (cleanedKeyword !== keyword) {
       setKeyword(cleanedKeyword);
     }
+    if (!cleanedKeyword) {
+      setGlyphs([]);
+      setActiveChar(null);
+      setQueryMessage("請先輸入至少一個中文字再查詢");
+      return;
+    }
     const params = new URLSearchParams();
     if (cleanedKeyword) params.set("q", cleanedKeyword);
     if (queryAuthor) params.set("author", queryAuthor);
     if (nextScriptType) params.set("scriptType", nextScriptType);
-    const res = await fetch(`/api/glyphs?${params.toString()}`);
-    const json = (await res.json()) as GlyphResponse;
-    const nextGlyphs = Object.values(json.results).flat();
-    const keywordChars = [...new Set(Array.from(cleanedKeyword).filter((char) => char.trim() !== ""))];
-    const resultChars = Object.keys(json.results);
-    setGlyphs(nextGlyphs);
-    setActiveChar((current) =>
-      current && resultChars.includes(current)
-        ? current
-        : keywordChars.find((char) => resultChars.includes(char)) ?? resultChars[0] ?? null
-    );
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/glyphs?${params.toString()}`);
+      const json = (await res.json()) as GlyphResponse;
+      const nextGlyphs = Object.values(json.results).flat();
+      const keywordChars = [...new Set(Array.from(cleanedKeyword).filter((char) => char.trim() !== ""))];
+      const resultChars = Object.keys(json.results);
+      setGlyphs(nextGlyphs);
+      setActiveChar((current) =>
+        current && resultChars.includes(current)
+          ? current
+          : keywordChars.find((char) => resultChars.includes(char)) ?? resultChars[0] ?? null
+      );
+    } finally {
+      setIsSearching(false);
+    }
   }
 
   function clearSearchFilters() {
@@ -171,71 +193,82 @@ export default function AdminPage() {
 
   async function saveGlyph(id: number) {
     if (!editDraft) return;
+    setSavingGlyphId(id);
     setQueryMessage("儲存中...");
-    const res = await fetch(`/api/glyphs/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...editDraft,
-        qualityScore: Number(editDraft.qualityScore || 0),
-      }),
-    });
+    try {
+      const res = await fetch(`/api/glyphs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...editDraft,
+          qualityScore: Number(editDraft.qualityScore || 0),
+        }),
+      });
 
-    const json = await res.json();
-    if (!res.ok) {
-      setQueryMessage(json.error ?? "儲存失敗");
-      return;
+      const json = await res.json();
+      if (!res.ok) {
+        setQueryMessage(json.error ?? "儲存失敗");
+        return;
+      }
+
+      setGlyphs((prev) =>
+        prev.map((glyph) =>
+          glyph.id === id
+            ? {
+                ...glyph,
+                char: editDraft.char,
+                author: editDraft.author || null,
+                scriptType: editDraft.scriptType || null,
+                workTitle: editDraft.workTitle || null,
+                source: editDraft.source || null,
+                license: editDraft.license || null,
+                qualityScore: Number(editDraft.qualityScore || 0),
+              }
+            : glyph
+        )
+      );
+      setEditingId(null);
+      setEditDraft(null);
+      setActiveChar(editDraft.char);
+      setQueryMessage("已更新字圖資料");
+      await loadStats();
+    } finally {
+      setSavingGlyphId(null);
     }
-
-    setGlyphs((prev) =>
-      prev.map((glyph) =>
-        glyph.id === id
-          ? {
-              ...glyph,
-              char: editDraft.char,
-              author: editDraft.author || null,
-              scriptType: editDraft.scriptType || null,
-              workTitle: editDraft.workTitle || null,
-              source: editDraft.source || null,
-              license: editDraft.license || null,
-              qualityScore: Number(editDraft.qualityScore || 0),
-            }
-          : glyph
-      )
-    );
-    setEditingId(null);
-    setEditDraft(null);
-    setActiveChar(editDraft.char);
-    setQueryMessage("已更新字圖資料");
-    await loadStats();
   }
 
   async function deleteGlyph(id: number) {
     if (!window.confirm(`確定刪除字圖 ID ${id}？相關集字作品中的這個字圖也會被移除。`)) return;
 
+    setDeletingGlyphId(id);
     setQueryMessage("刪除中...");
-    const res = await fetch(`/api/glyphs/${id}`, { method: "DELETE" });
-    const json = await res.json();
-    if (!res.ok) {
-      setQueryMessage(json.error ?? "刪除失敗");
-      return;
-    }
+    try {
+      const res = await fetch(`/api/glyphs/${id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) {
+        setQueryMessage(json.error ?? "刪除失敗");
+        return;
+      }
 
-    const nextGlyphs = glyphs.filter((glyph) => glyph.id !== id);
-    setGlyphs(nextGlyphs);
-    if (activeChar && !nextGlyphs.some((glyph) => glyph.char === activeChar)) {
-      setActiveChar(nextGlyphs[0]?.char ?? null);
+      const nextGlyphs = glyphs.filter((glyph) => glyph.id !== id);
+      setGlyphs(nextGlyphs);
+      if (activeChar && !nextGlyphs.some((glyph) => glyph.char === activeChar)) {
+        setActiveChar(nextGlyphs[0]?.char ?? null);
+      }
+      if (editingId === id) {
+        setEditingId(null);
+        setEditDraft(null);
+      }
+      setQueryMessage(json.changes ? "已刪除字圖" : "找不到要刪除的字圖");
+      await loadStats();
+    } finally {
+      setDeletingGlyphId(null);
     }
-    if (editingId === id) {
-      setEditingId(null);
-      setEditDraft(null);
-    }
-    setQueryMessage(json.changes ? "已刪除字圖" : "找不到要刪除的字圖");
-    await loadStats();
   }
 
   async function upload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setIsUploading(true);
     setMessage("上傳中...");
     const form = e.currentTarget;
     const formData = new FormData(form);
@@ -243,23 +276,27 @@ export default function AdminPage() {
     formData.set("author", onlyChinese(uploadAuthor));
     formData.set("scriptType", uploadScriptType === "未標註" ? "" : uploadScriptType);
 
-    const res = await fetch("/api/admin/upload", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-    const json = await res.json();
-    if (!res.ok) {
-      setMessage(json.error ?? "上傳失敗");
-      return;
+      const json = await res.json();
+      if (!res.ok) {
+        setMessage(json.error ?? "上傳失敗");
+        return;
+      }
+
+      setMessage(`已新增字圖 ID：${json.id}`);
+      form.reset();
+      setUploadChar("");
+      setUploadAuthor("");
+      setUploadScriptType("");
+      await loadStats();
+    } finally {
+      setIsUploading(false);
     }
-
-    setMessage(`已新增字圖 ID：${json.id}`);
-    form.reset();
-    setUploadChar("");
-    setUploadAuthor("");
-    setUploadScriptType("");
-    await loadStats();
   }
 
   useEffect(() => {
@@ -274,23 +311,23 @@ export default function AdminPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#0f1012] text-zinc-50">
-      <header className="border-b border-zinc-800 bg-[#15171a]">
+    <main className="min-h-screen bg-stone-50 text-stone-900">
+      <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <div>
-            <h1 className="text-2xl font-bold">MoScript 後台</h1>
-            <p className="text-sm text-zinc-400">
+            <h1 className="text-2xl font-bold font-serif">MoScript 後台</h1>
+            <p className="text-sm text-stone-500">
               管理字圖資料、手動上傳、檢查資料庫數量{user ? `｜${user.email}` : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <form action="/api/auth/logout?returnTo=/" method="post">
-              <button className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-sm font-bold text-zinc-200 hover:border-fuchsia-500 hover:text-white">
+              <button className="inline-flex items-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900">
                 <LogOut className="h-4 w-4" />
                 登出
               </button>
             </form>
-            <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold text-zinc-950">
+            <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white">
               <ArrowLeft className="h-4 w-4" />
               回前台
             </Link>
@@ -312,47 +349,54 @@ export default function AdminPage() {
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-6">
-          <section className="rounded-3xl border border-zinc-800 bg-[#181a1f] p-5">
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-bold">資料庫狀態</h2>
-              <button onClick={loadStats} className="rounded-xl bg-zinc-900 p-2 hover:bg-zinc-800">
-                <RefreshCw className="h-4 w-4" />
+              <button
+                onClick={loadStats}
+                disabled={isStatsLoading}
+                className="rounded-xl bg-stone-200 p-2 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="重新讀取資料庫狀態"
+              >
+                <RefreshCw className={`h-4 w-4 ${isStatsLoading ? "animate-spin" : ""}`} />
               </button>
             </div>
             {stats ? (
               <div className="grid gap-3">
-                <div className="rounded-2xl bg-zinc-950 p-4">
-                  <div className="text-sm text-zinc-500">字圖總數</div>
+                <div className="rounded-2xl bg-stone-50 p-4">
+                  <div className="text-sm text-stone-500">字圖總數</div>
                   <div className="text-3xl font-bold">{stats.totalGlyphs}</div>
                 </div>
-                <div className="rounded-2xl bg-zinc-950 p-4">
-                  <div className="text-sm text-zinc-500">不同字數</div>
+                <div className="rounded-2xl bg-stone-50 p-4">
+                  <div className="text-sm text-stone-500">不同字數</div>
                   <div className="text-3xl font-bold">{stats.totalChars}</div>
                 </div>
-                <div className="rounded-2xl bg-zinc-950 p-4">
-                  <div className="text-sm text-zinc-500">集字作品</div>
+                <div className="rounded-2xl bg-stone-50 p-4">
+                  <div className="text-sm text-stone-500">集字作品</div>
                   <div className="text-3xl font-bold">{stats.totalCollections}</div>
                 </div>
-                <div className="rounded-2xl bg-zinc-950 p-4">
-                  <div className="mb-2 text-sm text-zinc-500">書體分布</div>
+                <div className="rounded-2xl bg-stone-50 p-4">
+                  <div className="mb-2 text-sm text-stone-500">書體分布</div>
                   <div className="space-y-2">
                     {stats.scripts.map((item) => (
                       <div key={item.label} className="flex justify-between text-sm">
                         <span>{item.label}</span>
-                        <span className="text-zinc-400">{item.count}</span>
+                        <span className="text-stone-500">{item.count}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
+            ) : isStatsLoading ? (
+              <div className="text-stone-500">讀取中...</div>
             ) : (
-              <div className="text-zinc-500">讀取中...</div>
+              <div className="text-stone-500">無法讀取資料庫狀態</div>
             )}
           </section>
 
-          <section className="rounded-3xl border border-zinc-800 bg-[#181a1f] p-5">
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
             <div className="mb-4 flex items-center gap-2">
-              <ImagePlus className="h-5 w-5 text-fuchsia-400" />
+              <ImagePlus className="h-5 w-5 text-red-600" />
               <h2 className="text-xl font-bold">手動上傳字圖</h2>
             </div>
             <form onSubmit={upload} className="space-y-3">
@@ -374,7 +418,8 @@ export default function AdminPage() {
                   setUploadChar(nextValue);
                 }}
                 placeholder="單字，例如：小"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500"
+                disabled={isUploading}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
                 autoComplete="off"
               />
               <input
@@ -394,14 +439,16 @@ export default function AdminPage() {
                   );
                 }}
                 placeholder="作者，例如：孫過庭"
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500"
+                disabled={isUploading}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
                 autoComplete="off"
               />
               <select
                 name="scriptType"
                 value={uploadScriptType}
                 onChange={(e) => setUploadScriptType(e.target.value)}
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500"
+                disabled={isUploading}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
               >
                 <option value="">書體</option>
                 {uploadScriptOptions.map((scriptType) => (
@@ -410,24 +457,24 @@ export default function AdminPage() {
                   </option>
                 ))}
               </select>
-              <input name="workTitle" placeholder="作品，例如：書譜" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500" />
-              <input name="source" placeholder="來源，例如：local-dataset" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500" />
-              <input name="license" placeholder="授權，例如：non-commercial-research" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500" />
-              <input name="qualityScore" type="number" defaultValue="0" placeholder="品質分數(排序用)" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500" />
-              <input name="file" required type="file" accept="image/*,.svg" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm" />
-              <button disabled={isForbidden} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-fuchsia-600 px-4 py-3 font-bold hover:bg-fuchsia-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-fuchsia-600">
-                <Upload className="h-4 w-4" />
-                上傳並寫入資料庫
+              <input name="workTitle" placeholder="作品，例如：書譜" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
+              <input name="source" placeholder="來源，例如：local-dataset" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
+              <input name="license" placeholder="授權，例如：non-commercial-research" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
+              <input name="qualityScore" type="number" defaultValue="0" placeholder="品質分數(排序用)" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
+              <input name="file" required type="file" accept="image/*,.svg" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm disabled:opacity-70" />
+              <button disabled={isForbidden || isUploading} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-800 text-white">
+                {isUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {isUploading ? "上傳中" : "上傳並寫入資料庫"}
               </button>
-              {message && <div className="rounded-xl bg-zinc-950 p-3 text-sm text-zinc-300">{message}</div>}
+              {message && <div className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{message}</div>}
             </form>
           </section>
         </aside>
 
-        <section className="rounded-3xl border border-zinc-800 bg-[#181a1f] p-5">
+        <section className="rounded-3xl border border-stone-200 bg-white p-5">
           <div className="mb-4 flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <Database className="h-5 w-5 text-fuchsia-400" />
+              <Database className="h-5 w-5 text-red-600" />
               <h2 className="text-xl font-bold">字庫查詢</h2>
             </div>
             <form
@@ -453,29 +500,36 @@ export default function AdminPage() {
                   );
                 }}
                 placeholder="輸入中文，例如：小橋流水"
-                className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500"
+                disabled={isSearching}
+                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
                 autoComplete="off"
               />
               <input
                 value={queryAuthor}
                 onChange={(e) => setQueryAuthor(e.target.value)}
                 placeholder="作者"
-                className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 outline-none focus:border-fuchsia-500"
+                disabled={isSearching}
+                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
               />
-              <button type="submit" className="inline-flex items-center gap-2 rounded-xl bg-zinc-100 px-4 py-2 font-bold text-zinc-950">
-                <Search className="h-4 w-4" />
-                查詢
+              <button
+                type="submit"
+                disabled={isSearching || !hasSearchKeyword}
+                className="inline-flex items-center gap-2 rounded-xl bg-stone-800 px-4 py-2 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSearching ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                {isSearching ? "查詢中" : "查詢"}
               </button>
               <button
                 type="button"
                 onClick={clearSearchFilters}
-                className="rounded-xl border border-zinc-700 px-4 py-2 font-bold text-zinc-300 hover:border-zinc-500 hover:text-white"
+                disabled={isSearching}
+                className="rounded-xl border border-stone-300 px-4 py-2 font-bold text-stone-600 hover:border-zinc-500 hover:text-stone-900"
               >
                 清除
               </button>
             </form>
             <div className="overflow-x-auto">
-              <div className="inline-flex min-w-full gap-2 rounded-2xl border border-zinc-800 bg-zinc-950 p-1">
+              <div className="inline-flex min-w-full gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-1">
                 {scriptFilters.map((script) => {
                   const active = queryScriptType === script;
                   return (
@@ -486,11 +540,12 @@ export default function AdminPage() {
                         setQueryScriptType(script);
                         void search(script);
                       }}
+                      disabled={!hasSearchKeyword || (isSearching && active)}
                       aria-pressed={active}
                       className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
                         active
-                          ? "bg-fuchsia-600 text-white"
-                          : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+                          ? "bg-red-800 text-white"
+                          : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
                       }`}
                     >
                       {script || "全部書體"}
@@ -501,20 +556,31 @@ export default function AdminPage() {
             </div>
           </div>
           {queryMessage && (
-            <div className="mb-4 rounded-xl bg-zinc-950 p-3 text-sm text-zinc-300">
+            <div className="mb-4 rounded-xl bg-stone-50 p-3 text-sm text-stone-600">
               {queryMessage}
             </div>
           )}
 
+          <div className="relative min-h-[280px]">
+          {isSearching && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-white/80 backdrop-blur-sm">
+              <div className="flex animate-pulse items-center gap-2 opacity-80">
+                <img src="/glyphs/%E5%A2%A8/%E7%8E%8B%E9%90%B8_%E8%A1%8C_%E7%8E%8B%E9%90%B8%20%E8%A1%8C%E6%9B%B8_0001.gif" alt="墨" className="h-16 w-16 object-contain mix-blend-multiply" />
+                <img src="/glyphs/%E8%BF%B9/%E7%8E%8B%E9%90%B8_%E8%A1%8C_%E7%8E%8B%E9%90%B8%20%E8%A1%8C%E6%9B%B8_0001.gif" alt="跡" className="h-16 w-16 object-contain mix-blend-multiply" />
+              </div>
+              <p className="mt-4 font-serif text-lg font-bold text-stone-600">查詢中...</p>
+            </div>
+          )}
+
           {glyphs.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-zinc-700 p-10 text-center text-zinc-500">
-              輸入字後查詢，或先執行 npm run seed:demo / npm run import:glyphs。
+            <div className="rounded-2xl border border-dashed border-stone-300 p-10 text-center text-stone-500">
+              {isSearching ? "正在讀取字圖..." : "輸入字後，進行查詢！"}
             </div>
           ) : (
             <>
               {charTabs.length > 0 && (
                 <div className="mb-4 overflow-x-auto">
-                  <div className="inline-flex min-w-full gap-2 rounded-2xl border border-zinc-800 bg-zinc-950 p-1">
+                  <div className="inline-flex min-w-full gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -525,8 +591,8 @@ export default function AdminPage() {
                       aria-pressed={activeChar === null}
                       className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
                         activeChar === null
-                          ? "bg-fuchsia-600 text-white"
-                          : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+                          ? "bg-red-800 text-white"
+                          : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
                       }`}
                     >
                       全部 {glyphs.length}
@@ -545,8 +611,8 @@ export default function AdminPage() {
                           aria-pressed={active}
                           className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
                             active
-                              ? "bg-fuchsia-600 text-white"
-                              : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+                              ? "bg-red-800 text-white"
+                              : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
                           }`}
                         >
                           {char} {glyphsByChar[char]?.length ?? 0}
@@ -558,7 +624,7 @@ export default function AdminPage() {
               )}
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
               {visibleGlyphs.map((glyph) => (
-                <div key={glyph.id} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
+                <div key={glyph.id} className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
                   <GlyphImage glyph={glyph} size={108} />
                   {editingId === glyph.id && editDraft ? (
                     <div className="mt-3 space-y-2">
@@ -566,60 +632,62 @@ export default function AdminPage() {
                         value={editDraft.char}
                         onChange={(e) => updateDraft("char", e.target.value)}
                         maxLength={2}
-                        className="w-full rounded-lg border border-zinc-700 bg-[#181a1f] px-2 py-1 text-sm outline-none focus:border-fuchsia-500"
+                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
                         placeholder="字"
                       />
                       <input
                         value={editDraft.author}
                         onChange={(e) => updateDraft("author", e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-[#181a1f] px-2 py-1 text-sm outline-none focus:border-fuchsia-500"
+                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
                         placeholder="作者"
                       />
                       <input
                         value={editDraft.scriptType}
                         onChange={(e) => updateDraft("scriptType", e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-[#181a1f] px-2 py-1 text-sm outline-none focus:border-fuchsia-500"
+                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
                         placeholder="書體"
                       />
                       <input
                         value={editDraft.workTitle}
                         onChange={(e) => updateDraft("workTitle", e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-[#181a1f] px-2 py-1 text-sm outline-none focus:border-fuchsia-500"
+                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
                         placeholder="作品"
                       />
                       <input
                         value={editDraft.source}
                         onChange={(e) => updateDraft("source", e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-[#181a1f] px-2 py-1 text-sm outline-none focus:border-fuchsia-500"
+                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
                         placeholder="來源"
                       />
                       <input
                         value={editDraft.license}
                         onChange={(e) => updateDraft("license", e.target.value)}
-                        className="w-full rounded-lg border border-zinc-700 bg-[#181a1f] px-2 py-1 text-sm outline-none focus:border-fuchsia-500"
+                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
                         placeholder="授權"
                       />
                       <input
                         value={editDraft.qualityScore}
                         onChange={(e) => updateDraft("qualityScore", e.target.value)}
                         type="number"
-                        className="w-full rounded-lg border border-zinc-700 bg-[#181a1f] px-2 py-1 text-sm outline-none focus:border-fuchsia-500"
+                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
                         placeholder="品質分數(排序用)"
                       />
                       <div className="flex gap-2">
                         <button
                           onClick={() => void saveGlyph(glyph.id)}
-                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-fuchsia-600 px-2 py-2 text-sm font-bold hover:bg-fuchsia-500"
+                          disabled={savingGlyphId === glyph.id}
+                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-800 px-2 py-2 text-sm font-bold hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <Save className="h-4 w-4" />
-                          儲存
+                          {savingGlyphId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          {savingGlyphId === glyph.id ? "儲存中" : "儲存"}
                         </button>
                         <button
                           onClick={() => {
                             setEditingId(null);
                             setEditDraft(null);
                           }}
-                          className="inline-flex items-center justify-center rounded-lg border border-zinc-700 px-2 py-2 text-zinc-300 hover:border-zinc-500"
+                          disabled={savingGlyphId === glyph.id}
+                          className="inline-flex items-center justify-center rounded-lg border border-stone-300 px-2 py-2 text-stone-600 hover:border-zinc-500"
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -628,23 +696,23 @@ export default function AdminPage() {
                   ) : (
                     <>
                       <div className="mt-2 text-sm font-medium">{glyph.char}｜{glyph.author || "佚名"}</div>
-                      <div className="truncate text-xs text-zinc-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
+                      <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
                       <div className="mt-1 truncate text-xs text-zinc-600">ID {glyph.id}</div>
                       <div className="mt-3 flex gap-2">
                         <button
                           onClick={() => startEdit(glyph)}
                           disabled={isForbidden}
-                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-zinc-700 px-2 py-2 text-sm font-bold text-zinc-300 hover:border-fuchsia-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-zinc-700 disabled:hover:text-zinc-300"
+                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-stone-300 px-2 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-stone-300 disabled:hover:text-stone-600"
                         >
                           <Pencil className="h-4 w-4" />
                           修改
                         </button>
                         <button
                           onClick={() => void deleteGlyph(glyph.id)}
-                          disabled={isForbidden}
+                          disabled={isForbidden || deletingGlyphId === glyph.id}
                           className="inline-flex items-center justify-center rounded-lg border border-red-900/70 px-2 py-2 text-red-300 hover:border-red-500 hover:text-red-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-red-900/70 disabled:hover:text-red-300"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {deletingGlyphId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                         </button>
                       </div>
                     </>
@@ -654,6 +722,7 @@ export default function AdminPage() {
               </div>
             </>
           )}
+          </div>
         </section>
       </section>
     </main>

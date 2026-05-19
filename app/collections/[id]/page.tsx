@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { GlyphImage } from "@/components/GlyphImage";
 import { getCurrentUser } from "@/lib/auth";
+import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -61,23 +62,26 @@ export default async function CollectionPage({ params }: Params) {
   `).all(id) as Item[];
 
   return (
-    <main className="min-h-screen bg-[#0f1012] text-zinc-50">
-      <header className="border-b border-zinc-800 bg-[#15171a]">
+    <main className="min-h-screen bg-stone-50 text-stone-900">
+      <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <div>
-            <h1 className="text-2xl font-bold">{collection.title}</h1>
-            <p className="text-sm text-zinc-400">集字作品｜{collection.created_at}</p>
+            <h1 className="text-2xl font-bold font-serif">{collection.title}</h1>
+            <p className="text-sm text-stone-500">集字作品｜{collection.created_at}</p>
           </div>
-          <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold text-zinc-950">
-            <ArrowLeft className="h-4 w-4" />
-            回前台
-          </Link>
+          <div className="flex items-center gap-3">
+            <DeleteCollectionButton id={collection.id} redirectOnSuccess={true} />
+            <Link href="/collections" className="inline-flex items-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
+              <ArrowLeft className="h-4 w-4" />
+              回列表
+            </Link>
+          </div>
         </div>
       </header>
 
       <section className="mx-auto max-w-6xl px-4 py-8">
-        <div className="rounded-3xl border border-zinc-800 bg-[#181a1f] p-6">
-          <div className="flex flex-wrap justify-center gap-3 rounded-3xl bg-zinc-950 p-6">
+        <div className="rounded-3xl border border-stone-200 bg-white p-6">
+          <div className="flex flex-wrap justify-center gap-3 rounded-3xl bg-stone-50 p-6">
             {items.map((item) => (
               <GlyphImage
                 key={`${item.position}-${item.glyph_id}`}
@@ -96,13 +100,13 @@ export default async function CollectionPage({ params }: Params) {
 
           <div className="mt-6 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
-              <div key={`${item.position}-meta`} className="rounded-2xl bg-zinc-950 p-4 text-sm text-zinc-300">
-                <div className="mb-1 text-lg font-bold text-white">{item.char}</div>
+              <div key={`${item.position}-meta`} className="rounded-2xl bg-stone-50 p-4 text-sm text-stone-600">
+                <div className="mb-1 text-lg font-bold font-serif text-stone-900">{item.char}</div>
                 <div>作者：{item.author || "佚名"}</div>
                 <div>書體：{item.script_type || "未標註"}</div>
                 <div>作品：{item.work_title || "未標題"}</div>
-                <div className="truncate text-zinc-500">來源：{item.source || "未標註"}</div>
-                <div className="truncate text-zinc-500">授權：{item.license || "未標註"}</div>
+                <div className="truncate text-stone-500">來源：{item.source || "未標註"}</div>
+                <div className="truncate text-stone-500">授權：{item.license || "未標註"}</div>
               </div>
             ))}
           </div>
