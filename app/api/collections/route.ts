@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   const db = await getDb();
   const rows = db.prepare(`
-    SELECT id, title, text, created_at
+    SELECT id, title, text, display_direction, created_at
     FROM collections
     WHERE user_id = ?
     ORDER BY id DESC
@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const title = String(body.title || body.text || "未命名集字作品").trim();
   const text = String(body.text || "").trim();
+  const displayDirection = body.displayDirection === "vertical" ? "vertical" : "horizontal";
   const items = normalizeItems((body.items || []) as IncomingItem[]);
 
   if (!text || items.length === 0) {
@@ -95,8 +96,8 @@ export async function POST(req: NextRequest) {
     }
 
     const collection = db
-      .prepare("INSERT INTO collections (user_id, user_email, user_name, title, text) VALUES (?, ?, ?, ?, ?)")
-      .run(user.id, user.email, user.name, title, text);
+      .prepare("INSERT INTO collections (user_id, user_email, user_name, title, text, display_direction) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(user.id, user.email, user.name, title, text, displayDirection);
 
     const collectionId = Number(collection.lastInsertRowid);
     const insertItem = db.prepare(`

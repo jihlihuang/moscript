@@ -4,8 +4,8 @@ import { ArrowLeft, BookOpen, Search } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
-import { GlyphImage } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
+import { CollectionPreviewGlyphs } from "@/components/CollectionPreviewGlyphs";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,7 @@ type CollectionSummary = {
   id: number;
   title: string;
   text: string;
+  display_direction: "horizontal" | "vertical" | null;
   created_at: string;
   item_count: number;
 };
@@ -38,6 +39,7 @@ export default async function CollectionsPage() {
       c.id,
       c.title,
       c.text,
+      c.display_direction,
       c.created_at,
       COUNT(ci.id) AS item_count
     FROM collections c
@@ -118,34 +120,12 @@ export default async function CollectionsPage() {
                     </div>
                     <BookOpen className="mt-1 h-5 w-5 shrink-0 text-red-600" />
                   </div>
-                  {items.length > 0 ? (
-                    <div className="relative z-0 mb-4 grid min-h-[92px] grid-cols-4 gap-2 overflow-hidden rounded-2xl bg-stone-50 p-2 min-[420px]:grid-cols-5 sm:flex sm:min-h-[88px] sm:flex-wrap sm:content-start sm:p-3">
-                      {items.slice(0, 8).map((item) => (
-                        <GlyphImage
-                          key={`${collection.id}-${item.position}-${item.glyph_id}`}
-                          size={64}
-                          containerClassName="h-14 w-full sm:h-16 sm:w-16"
-                          glyph={{
-                            id: item.glyph_id,
-                            char: item.char,
-                            imageUrl: item.image_url,
-                            author: item.author,
-                            scriptType: item.script_type,
-                            workTitle: item.work_title,
-                          }}
-                        />
-                      ))}
-                      {items.length > 8 && (
-                        <div className="flex h-14 w-full items-center justify-center rounded-xl border border-stone-200 bg-white text-sm font-bold text-stone-500 sm:h-16 sm:w-16">
-                          +{items.length - 8}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="relative z-0 mb-4 line-clamp-2 min-h-[88px] rounded-2xl bg-stone-50 p-3 text-lg tracking-[0.18em] text-stone-800 sm:text-xl sm:tracking-[0.25em]">
-                      {collection.text}
-                    </div>
-                  )}
+                  <CollectionPreviewGlyphs
+                    collectionId={collection.id}
+                    initialDirection={collection.display_direction === "vertical" ? "vertical" : "horizontal"}
+                    items={items}
+                    text={collection.text}
+                  />
                   <div className="relative z-20 mt-auto flex flex-col gap-2 text-sm text-stone-500 sm:flex-row sm:items-center sm:justify-between">
                     <span className="line-clamp-1 min-w-0">{collection.text}｜{collection.item_count} 個字圖</span>
                     <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-end">

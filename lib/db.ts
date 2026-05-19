@@ -90,6 +90,7 @@ export function initSchema(db: Database.Database) {
       user_name TEXT,
       title TEXT NOT NULL,
       text TEXT NOT NULL,
+      display_direction TEXT DEFAULT 'horizontal',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS collection_items (
@@ -142,6 +143,9 @@ export function initSchema(db: Database.Database) {
   }
   if (!collectionColumnNames.has("user_name")) {
     db.prepare("ALTER TABLE collections ADD COLUMN user_name TEXT").run();
+  }
+  if (!collectionColumnNames.has("display_direction")) {
+    db.prepare("ALTER TABLE collections ADD COLUMN display_direction TEXT DEFAULT 'horizontal'").run();
   }
   db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)").run();
 }

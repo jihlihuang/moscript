@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Search } from "lucide-react";
 import { getDb } from "@/lib/db";
-import { GlyphImage } from "@/components/GlyphImage";
 import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 import { LogoMark } from "@/components/LogoMark";
+import { CollectionGlyphDisplay } from "@/components/CollectionGlyphDisplay";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -15,6 +15,7 @@ type Collection = {
   id: number;
   title: string;
   text: string;
+  display_direction: "horizontal" | "vertical" | null;
   created_at: string;
 };
 
@@ -38,7 +39,7 @@ export default async function CollectionPage({ params }: Params) {
   const db = await getDb();
 
   const collection = db.prepare(`
-    SELECT id, title, text, created_at
+    SELECT id, title, text, display_direction, created_at
     FROM collections
     WHERE id = ? AND user_id = ?
   `).get(id, user.id) as Collection | undefined;
@@ -91,23 +92,11 @@ export default async function CollectionPage({ params }: Params) {
 
       <section className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-8">
         <div className="rounded-2xl border border-stone-200 bg-white p-3 sm:rounded-3xl sm:p-6">
-          <div className="grid grid-cols-3 gap-2 rounded-2xl bg-stone-50 p-3 min-[420px]:grid-cols-4 sm:flex sm:flex-wrap sm:justify-center sm:gap-3 sm:rounded-3xl sm:p-6">
-            {items.map((item) => (
-              <GlyphImage
-                key={`${item.position}-${item.glyph_id}`}
-                size={120}
-                containerClassName="h-[96px] w-full sm:h-[120px] sm:w-[120px]"
-                glyph={{
-                  id: item.glyph_id,
-                  char: item.char,
-                  imageUrl: item.image_url,
-                  author: item.author,
-                  scriptType: item.script_type,
-                  workTitle: item.work_title,
-                }}
-              />
-            ))}
-          </div>
+          <CollectionGlyphDisplay
+            collectionId={collection.id}
+            initialDirection={collection.display_direction === "vertical" ? "vertical" : "horizontal"}
+            items={items}
+          />
 
           <div className="mt-4 grid gap-2 sm:mt-6 sm:gap-3 md:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
