@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
     returnTo = "/";
   }
 
-  const res = NextResponse.redirect(new URL(returnTo, req.nextUrl.origin));
+  const res = NextResponse.redirect(new URL(returnTo, getAppOrigin(req)));
   setSessionCookie(res, user);
   res.cookies.set(oauthStateCookieName, "", {
     httpOnly: true,
