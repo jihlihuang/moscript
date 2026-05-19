@@ -560,6 +560,14 @@ export default function FrontStagePage() {
                             <Trash2 className="h-3 w-3" />
                           </button>
                         )}
+                        {glyph && (
+                          <Link
+                            href={`/practice/${glyph.id}`}
+                            className="absolute bottom-1 left-1 rounded-lg bg-white/90 px-2 py-1 text-xs font-bold text-stone-700 shadow-sm hover:text-red-800"
+                          >
+                            練習
+                          </Link>
+                        )}
                       </div>
                     );
                   })}
@@ -692,15 +700,26 @@ export default function FrontStagePage() {
                   ) : (
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-6">
                       {glyphs.map((glyph) => (
-                        <button
+                        <div
                           key={glyph.id}
-                          onClick={() => pickGlyph(glyph, index)}
                           className="rounded-2xl border border-stone-200 bg-stone-50 p-2 text-left hover:border-red-700 sm:p-3"
                         >
-                          <GlyphImage glyph={glyph} size={110} containerClassName="h-[96px] w-full sm:h-[110px] sm:w-full" />
-                          <div className="mt-2 text-sm font-medium text-stone-700">{glyph.author || "佚名"}</div>
-                          <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => pickGlyph(glyph, index)}
+                            className="block w-full text-left"
+                          >
+                            <GlyphImage glyph={glyph} size={110} containerClassName="h-[96px] w-full sm:h-[110px] sm:w-full" />
+                            <div className="mt-2 text-sm font-medium text-stone-700">{glyph.author || "佚名"}</div>
+                            <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
+                          </button>
+                          <Link
+                            href={`/practice/${glyph.id}`}
+                            className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
+                          >
+                            練習
+                          </Link>
+                        </div>
                       ))}
                     </div>
                   )}

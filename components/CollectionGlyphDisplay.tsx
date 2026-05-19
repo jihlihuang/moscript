@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Columns3, Rows3 } from "lucide-react";
 import { GlyphImage } from "@/components/GlyphImage";
 import { useCollectionDirectionPreference } from "@/components/useCollectionDirectionPreference";
@@ -64,19 +65,25 @@ export function CollectionGlyphDisplay({
           <div className="overflow-x-auto overscroll-x-contain">
             <div className="flex w-max min-w-full snap-x snap-mandatory items-center justify-center gap-3 px-1 py-2 sm:gap-4">
               {items.map((item) => (
-                <GlyphImage
+                <Link
                   key={`${item.position}-${item.glyph_id}`}
-                  size={240}
-                  containerClassName={`${glyphSizeClass} shrink-0 snap-center`}
-                  glyph={{
-                    id: item.glyph_id,
-                    char: item.char,
-                    imageUrl: item.image_url,
-                    author: item.author,
-                    scriptType: item.script_type,
-                    workTitle: item.work_title,
-                  }}
-                />
+                  href={`/practice/${item.glyph_id}`}
+                  className="shrink-0 snap-center rounded-xl transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
+                  title={`練習 ${item.char}`}
+                >
+                  <GlyphImage
+                    size={240}
+                    containerClassName={glyphSizeClass}
+                    glyph={{
+                      id: item.glyph_id,
+                      char: item.char,
+                      imageUrl: item.image_url,
+                      author: item.author,
+                      scriptType: item.script_type,
+                      workTitle: item.work_title,
+                    }}
+                  />
+                </Link>
               ))}
             </div>
           </div>
@@ -87,19 +94,25 @@ export function CollectionGlyphDisplay({
             <div className="mx-auto flex w-fit max-w-full justify-center gap-4 rounded-[1.5rem] bg-white px-4 py-4 shadow-inner sm:px-8 sm:py-8">
               <div className="flex max-h-[min(76vh,720px)] snap-x snap-mandatory flex-col flex-wrap content-start items-center gap-3 [direction:rtl] sm:gap-4">
                 {items.map((item) => (
-                  <GlyphImage
+                  <Link
                     key={`${item.position}-${item.glyph_id}`}
-                    size={240}
-                    containerClassName={`${glyphSizeClass} shrink-0 snap-center [direction:ltr]`}
-                    glyph={{
-                      id: item.glyph_id,
-                      char: item.char,
-                      imageUrl: item.image_url,
-                      author: item.author,
-                      scriptType: item.script_type,
-                      workTitle: item.work_title,
-                    }}
-                  />
+                    href={`/practice/${item.glyph_id}`}
+                    className="shrink-0 snap-center rounded-xl transition [direction:ltr] hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
+                    title={`練習 ${item.char}`}
+                  >
+                    <GlyphImage
+                      size={240}
+                      containerClassName={glyphSizeClass}
+                      glyph={{
+                        id: item.glyph_id,
+                        char: item.char,
+                        imageUrl: item.image_url,
+                        author: item.author,
+                        scriptType: item.script_type,
+                        workTitle: item.work_title,
+                      }}
+                    />
+                  </Link>
                 ))}
               </div>
             </div>

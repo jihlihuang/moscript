@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Columns3, Rows3 } from "lucide-react";
 import { GlyphImage } from "@/components/GlyphImage";
 import { useCollectionDirectionPreference } from "@/components/useCollectionDirectionPreference";
@@ -75,19 +76,28 @@ export function CollectionPreviewGlyphs({
           <div className="rounded-2xl bg-stone-50 p-2 sm:p-3">
             <div className="grid grid-cols-4 gap-2 min-[420px]:grid-cols-5 sm:grid-cols-4">
               {horizontalItems.map((item) => (
-                <GlyphImage
+                <Link
                   key={`${item.position}-${item.glyph_id}`}
-                  size={64}
-                  containerClassName="aspect-square h-auto w-full"
-                  glyph={{
-                    id: item.glyph_id,
-                    char: item.char,
-                    imageUrl: item.image_url,
-                    author: item.author,
-                    scriptType: item.script_type,
-                    workTitle: item.work_title,
+                  href={`/practice/${item.glyph_id}`}
+                  className="rounded-xl focus:outline-none focus:ring-2 focus:ring-red-800"
+                  title={`練習 ${item.char}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
                   }}
-                />
+                >
+                  <GlyphImage
+                    size={64}
+                    containerClassName="aspect-square h-auto w-full"
+                    glyph={{
+                      id: item.glyph_id,
+                      char: item.char,
+                      imageUrl: item.image_url,
+                      author: item.author,
+                      scriptType: item.script_type,
+                      workTitle: item.work_title,
+                    }}
+                  />
+                </Link>
               ))}
               {items.length > 8 && (
                 <div className="flex aspect-square w-full items-center justify-center rounded-xl border border-stone-200 bg-white text-sm font-bold text-stone-500">
@@ -101,19 +111,28 @@ export function CollectionPreviewGlyphs({
             <div className="mx-auto flex w-fit max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-stone-200 bg-white p-2 shadow-inner">
               <div className="flex snap-x snap-mandatory flex-col items-center gap-1.5 [direction:rtl]">
                 {verticalItems.map((item) => (
-                  <GlyphImage
+                  <Link
                     key={`${item.position}-${item.glyph_id}`}
-                    size={64}
-                    containerClassName="h-16 w-16 shrink-0 snap-center [direction:ltr]"
-                    glyph={{
-                      id: item.glyph_id,
-                      char: item.char,
-                      imageUrl: item.image_url,
-                      author: item.author,
-                      scriptType: item.script_type,
-                      workTitle: item.work_title,
+                    href={`/practice/${item.glyph_id}`}
+                    className="shrink-0 snap-center rounded-xl [direction:ltr] focus:outline-none focus:ring-2 focus:ring-red-800"
+                    title={`練習 ${item.char}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
                     }}
-                  />
+                  >
+                    <GlyphImage
+                      size={64}
+                      containerClassName="h-16 w-16"
+                      glyph={{
+                        id: item.glyph_id,
+                        char: item.char,
+                        imageUrl: item.image_url,
+                        author: item.author,
+                        scriptType: item.script_type,
+                        workTitle: item.work_title,
+                      }}
+                    />
+                  </Link>
                 ))}
                 {items.length > 6 && (
                   <div className="flex h-8 w-16 shrink-0 snap-center items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-xs font-bold text-stone-500 [direction:ltr]">
