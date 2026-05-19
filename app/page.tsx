@@ -153,7 +153,7 @@ export default function FrontStagePage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <div className="flex flex-wrap items-baseline gap-3">
             <h1 className="text-2xl font-bold">墨跡</h1>
-            <p className="text-sm font-medium text-zinc-400">用心寫書法</p>
+            <p className="text-sm font-medium text-zinc-400">從字形到心境，重新認識書法之美</p>
           </div>
           <div className="flex items-center gap-2">
             <Link

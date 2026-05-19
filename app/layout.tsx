@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "墨跡",
-  description: "墨跡｜用心寫書法",
+  description: "墨跡｜從字形到心境，重新認識書法之美",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
