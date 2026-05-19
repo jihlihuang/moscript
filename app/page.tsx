@@ -53,6 +53,16 @@ export default function FrontStagePage() {
   const [logoClickCount, setLogoClickCount] = useState(0);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("loggedOut") === "1") {
+      localStorage.removeItem("admin_revealed_at");
+      setIsAdminVisible(false);
+      setLogoClickCount(0);
+      url.searchParams.delete("loggedOut");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      return;
+    }
+
     const revealedAt = localStorage.getItem("admin_revealed_at");
     if (revealedAt) {
       const timeDiff = Date.now() - parseInt(revealedAt, 10);
@@ -73,6 +83,12 @@ export default function FrontStagePage() {
     } else {
       setLogoClickCount(newCount);
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("admin_revealed_at");
+    setIsAdminVisible(false);
+    setLogoClickCount(0);
   };
 
   const queryChars = useMemo(
@@ -220,7 +236,7 @@ export default function FrontStagePage() {
           </div>
           <div className="flex items-center gap-2">
             {user ? (
-              <form action="/api/auth/logout?returnTo=/" method="post" className="flex items-center gap-2">
+              <form action="/api/auth/logout?returnTo=/" method="post" onSubmit={handleLogout} className="flex items-center gap-2">
                 <span className="hidden max-w-[220px] truncate text-sm text-stone-500 md:inline">
                   {user.email}
                 </span>
