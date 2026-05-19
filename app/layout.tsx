@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MoScript",
-  description: "MoScript｜書法字搜尋、集字與後台匯入 MVP",
+  title: "墨跡",
+  description: "墨跡｜用心寫書法",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -152,8 +152,8 @@ export default function FrontStagePage() {
       <header className="sticky top-0 z-20 border-b border-zinc-800 bg-[#15171a]/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="text-2xl font-bold tracking-[0.35em]">墨 跡</h1>
-            <p className="font-serif text-base italic text-zinc-400" style={{ fontFamily: "\"Brush Script MT\", \"Segoe Script\", cursive" }}>MoScript</p>
+            <h1 className="text-2xl font-bold">墨跡</h1>
+            <p className="text-sm font-medium text-zinc-400">用心寫書法</p>
           </div>
           <div className="flex items-center gap-2">
             <Link
