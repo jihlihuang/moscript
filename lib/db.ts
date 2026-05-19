@@ -85,11 +85,13 @@ export function initSchema(db: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS collections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT,
+      user_email TEXT,
+      user_name TEXT,
       title TEXT NOT NULL,
       text TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
-
     CREATE TABLE IF NOT EXISTS collection_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       collection_id INTEGER NOT NULL,
@@ -101,5 +103,45 @@ export function initSchema(db: Database.Database) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_collection_items_collection_id ON collection_items(collection_id);
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT,
+      picture TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      user_email TEXT NOT NULL,
+      user_name TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      details TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_user_id ON admin_audit_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
   `);
+
+  const collectionColumns = db.prepare("PRAGMA table_info(collections)").all() as { name: string }[];
+  const collectionColumnNames = new Set(collectionColumns.map((column) => column.name));
+  if (!collectionColumnNames.has("user_id")) {
+    db.prepare("ALTER TABLE collections ADD COLUMN user_id TEXT").run();
+  }
+  if (!collectionColumnNames.has("user_email")) {
+    db.prepare("ALTER TABLE collections ADD COLUMN user_email TEXT").run();
+  }
+  if (!collectionColumnNames.has("user_name")) {
+    db.prepare("ALTER TABLE collections ADD COLUMN user_name TEXT").run();
+  }
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)").run();
 }

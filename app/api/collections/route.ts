@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
+import { requireRequestUser, unauthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -9,19 +10,26 @@ type IncomingItem = {
   position: number;
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const user = requireRequestUser(req);
+  if (!user) return unauthorized();
+
   const db = await getDb();
   const rows = db.prepare(`
     SELECT id, title, text, created_at
     FROM collections
+    WHERE user_id = ?
     ORDER BY id DESC
     LIMIT 100
-  `).all();
+  `).all(user.id);
 
   return NextResponse.json({ collections: rows });
 }
 
 export async function POST(req: NextRequest) {
+  const user = requireRequestUser(req);
+  if (!user) return unauthorized();
+
   const body = await req.json();
   const title = String(body.title || body.text || "未命名集字作品").trim();
   const text = String(body.text || "").trim();
@@ -38,8 +46,8 @@ export async function POST(req: NextRequest) {
 
   const save = db.transaction(() => {
     const collection = db
-      .prepare("INSERT INTO collections (title, text) VALUES (?, ?)")
-      .run(title, text);
+      .prepare("INSERT INTO collections (user_id, user_email, user_name, title, text) VALUES (?, ?, ?, ?, ?)")
+      .run(user.id, user.email, user.name, title, text);
 
     const collectionId = Number(collection.lastInsertRowid);
     const insertItem = db.prepare(`

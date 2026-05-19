@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Check, Database, Filter, Images, Search, Trash2 } from "lucide-react";
+import { BookOpen, Check, Database, Filter, Images, LogIn, LogOut, Search, Trash2 } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 
 type GlyphDto = GlyphLike & {
@@ -26,6 +26,13 @@ type ScriptResponse = {
   scripts: { label: string; count: number }[];
 };
 
+type CurrentUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+};
+
 function onlyChinese(value: string) {
   return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
 }
@@ -41,6 +48,7 @@ export default function FrontStagePage() {
   const [activePosition, setActivePosition] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [user, setUser] = useState<CurrentUser | null>(null);
 
   const queryChars = useMemo(
     () => [...new Set(Array.from(onlyChinese(q)).filter((c) => c.trim() !== ""))],
@@ -61,6 +69,16 @@ export default function FrontStagePage() {
     () => ["", ...availableScripts],
     [availableScripts]
   );
+
+  useEffect(() => {
+    async function loadCurrentUser() {
+      const res = await fetch("/api/auth/me");
+      const json = (await res.json()) as { user: CurrentUser | null };
+      setUser(json.user);
+    }
+
+    void loadCurrentUser();
+  }, []);
 
   useEffect(() => {
     async function loadAvailableScripts() {
@@ -124,6 +142,11 @@ export default function FrontStagePage() {
 
   async function saveCollection() {
     setMessage("");
+    if (!user) {
+      window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/")}`;
+      return;
+    }
+
     const res = await fetch("/api/collections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -140,6 +163,10 @@ export default function FrontStagePage() {
 
     const json = await res.json();
     if (!res.ok) {
+      if (res.status === 401) {
+        window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/")}`;
+        return;
+      }
       setMessage(json.error ?? "儲存失敗");
       return;
     }
@@ -156,6 +183,28 @@ export default function FrontStagePage() {
             <p className="text-sm font-medium text-zinc-400">從字形到心境，重新認識書法之美</p>
           </div>
           <div className="flex items-center gap-2">
+            {user ? (
+              <form action="/api/auth/logout?returnTo=/" method="post" className="flex items-center gap-2">
+                <span className="hidden max-w-[220px] truncate text-sm text-zinc-400 md:inline">
+                  {user.email}
+                </span>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-sm font-bold text-zinc-200 hover:border-fuchsia-500 hover:text-white"
+                >
+                  <LogOut className="h-4 w-4" />
+                  登出
+                </button>
+              </form>
+            ) : (
+              <Link
+                href="/api/auth/google?returnTo=/"
+                className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-sm font-bold text-zinc-200 hover:border-fuchsia-500 hover:text-white"
+              >
+                <LogIn className="h-4 w-4" />
+                Google 登入
+              </Link>
+            )}
             <Link
               href="/collections"
               className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-sm font-bold text-zinc-200 hover:border-fuchsia-500 hover:text-white"

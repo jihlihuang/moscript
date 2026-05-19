@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowLeft, BookOpen } from "lucide-react";
 import { getDb } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,9 @@ type CollectionSummary = {
 };
 
 export default async function CollectionsPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/api/auth/google?returnTo=/collections");
+
   const db = await getDb();
   const collections = db.prepare(`
     SELECT
@@ -23,10 +28,11 @@ export default async function CollectionsPage() {
       COUNT(ci.id) AS item_count
     FROM collections c
     LEFT JOIN collection_items ci ON ci.collection_id = c.id
+    WHERE c.user_id = ?
     GROUP BY c.id
     ORDER BY c.id DESC
     LIMIT 100
-  `).all() as CollectionSummary[];
+  `).all(user.id) as CollectionSummary[];
 
   return (
     <main className="min-h-screen bg-[#0f1012] text-zinc-50">
@@ -34,7 +40,7 @@ export default async function CollectionsPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <div>
             <h1 className="text-2xl font-bold">集字作品</h1>
-            <p className="text-sm text-zinc-400">查看已儲存的集字內容</p>
+            <p className="text-sm text-zinc-400">查看 {user.email} 儲存的集字內容</p>
           </div>
           <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold text-zinc-950">
             <ArrowLeft className="h-4 w-4" />

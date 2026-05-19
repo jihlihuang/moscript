@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { GlyphImage } from "@/components/GlyphImage";
+import { getCurrentUser } from "@/lib/auth";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -28,14 +29,17 @@ type Item = {
 };
 
 export default async function CollectionPage({ params }: Params) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/api/auth/google?returnTo=/collections");
+
   const { id } = await params;
   const db = await getDb();
 
   const collection = db.prepare(`
     SELECT id, title, text, created_at
     FROM collections
-    WHERE id = ?
-  `).get(id) as Collection | undefined;
+    WHERE id = ? AND user_id = ?
+  `).get(id, user.id) as Collection | undefined;
 
   if (!collection) notFound();
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { glyphBlobName, glyphImageUrl, uploadBufferToBlob } from "@/lib/blob-storage";
+import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,10 @@ function safePart(value: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const user = requireRequestUser(req);
+  if (!user) return unauthorized();
+  if (!isAdminAllowed(user)) return forbidden();
+
   const form = await req.formData();
   const file = form.get("file");
 
@@ -55,6 +60,11 @@ export async function POST(req: NextRequest) {
     qualityScore
   );
   await syncDbToBlob();
+  await logAdminAction(req, user, "glyph_upload", {
+    targetType: "glyph",
+    targetId: info.lastInsertRowid,
+    details: { char, author, scriptType, workTitle, source, license, imageUrl },
+  });
 
   return NextResponse.json({
     id: info.lastInsertRowid,

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Database, ImagePlus, Pencil, RefreshCw, Save, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Database, ImagePlus, LogOut, Pencil, RefreshCw, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 
 type Stats = {
@@ -33,6 +33,11 @@ type GlyphEditDraft = {
   qualityScore: string;
 };
 
+type CurrentUser = {
+  email: string;
+  name: string | null;
+};
+
 function onlyChinese(value: string) {
   return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
 }
@@ -56,6 +61,7 @@ export default function AdminPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<GlyphEditDraft | null>(null);
   const [activeChar, setActiveChar] = useState<string | null>(null);
+  const [user, setUser] = useState<CurrentUser | null>(null);
 
   const glyphsByChar = useMemo(
     () =>
@@ -96,6 +102,14 @@ export default function AdminPage() {
 
   async function loadStats() {
     const res = await fetch("/api/admin/stats");
+    if (res.status === 401) {
+      window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/admin")}`;
+      return;
+    }
+    if (res.status === 403) {
+      setMessage("此帳號沒有後台權限");
+      return;
+    }
     setStats(await res.json());
   }
 
@@ -247,6 +261,13 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    async function loadCurrentUser() {
+      const res = await fetch("/api/auth/me");
+      const json = (await res.json()) as { user: CurrentUser | null };
+      setUser(json.user);
+    }
+
+    void loadCurrentUser();
     loadStats();
   }, []);
 
@@ -256,12 +277,22 @@ export default function AdminPage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <div>
             <h1 className="text-2xl font-bold">MoScript 後台</h1>
-            <p className="text-sm text-zinc-400">管理字圖資料、手動上傳、檢查資料庫數量</p>
+            <p className="text-sm text-zinc-400">
+              管理字圖資料、手動上傳、檢查資料庫數量{user ? `｜${user.email}` : ""}
+            </p>
           </div>
-          <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold text-zinc-950">
-            <ArrowLeft className="h-4 w-4" />
-            回前台
-          </Link>
+          <div className="flex items-center gap-2">
+            <form action="/api/auth/logout?returnTo=/" method="post">
+              <button className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 px-4 py-2 text-sm font-bold text-zinc-200 hover:border-fuchsia-500 hover:text-white">
+                <LogOut className="h-4 w-4" />
+                登出
+              </button>
+            </form>
+            <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-zinc-100 px-4 py-2 text-sm font-bold text-zinc-950">
+              <ArrowLeft className="h-4 w-4" />
+              回前台
+            </Link>
+          </div>
         </div>
       </header>
 

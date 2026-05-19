@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { groupGlyphsByChar, searchGlyphs } from "@/lib/glyphs";
+import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const user = requireRequestUser(req);
+  if (!user) return unauthorized();
+  if (!isAdminAllowed(user)) return forbidden();
+
   const body = await req.json();
   const db = await getDb();
 
@@ -51,6 +56,17 @@ export async function POST(req: NextRequest) {
   );
 
   await syncDbToBlob();
+  await logAdminAction(req, user, "glyph_create", {
+    targetType: "glyph",
+    targetId: info.lastInsertRowid,
+    details: {
+      char: body.char,
+      author: body.author ?? null,
+      scriptType: body.scriptType ?? null,
+      workTitle: body.workTitle ?? null,
+      imageUrl: body.imageUrl,
+    },
+  });
 
   return NextResponse.json({ id: info.lastInsertRowid });
 }
