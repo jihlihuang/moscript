@@ -1,0 +1,42 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getDb } from "@/lib/db";
+
+export const runtime = "nodejs";
+
+type Params = {
+  params: Promise<{ id: string }>;
+};
+
+export async function GET(_req: NextRequest, { params }: Params) {
+  const { id } = await params;
+  const db = await getDb();
+
+  const collection = db.prepare(`
+    SELECT id, title, text, created_at
+    FROM collections
+    WHERE id = ?
+  `).get(id);
+
+  if (!collection) {
+    return NextResponse.json({ error: "找不到集字作品" }, { status: 404 });
+  }
+
+  const items = db.prepare(`
+    SELECT
+      ci.position,
+      ci.char,
+      g.id as glyph_id,
+      g.author,
+      g.script_type,
+      g.work_title,
+      g.image_url,
+      g.source,
+      g.license
+    FROM collection_items ci
+    JOIN glyphs g ON g.id = ci.glyph_id
+    WHERE ci.collection_id = ?
+    ORDER BY ci.position ASC
+  `).all(id);
+
+  return NextResponse.json({ collection, items });
+}

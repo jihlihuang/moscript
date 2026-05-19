@@ -1,0 +1,10 @@
+.env*
+!.env.example
+!.env.deploy.example
+node_modules
+.next
+data
+public/glyphs
+raw-datasets
+tsconfig.tsbuildinfo
+.DS_Store

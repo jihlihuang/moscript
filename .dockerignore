@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+Dockerfile
+README.md
+raw-datasets
+scripts
+tsconfig.tsbuildinfo
+npm-debug.log*
+.DS_Store
+public/glyphs
+data
+data/*.sqlite-shm
+data/*.sqlite-wal

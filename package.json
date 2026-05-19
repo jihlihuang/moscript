@@ -1,0 +1,33 @@
+{
+  "name": "moscript",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "import:glyphs": "tsx scripts/import-glyphs.ts",
+    "upload:blob": "node scripts/upload-blob-assets.mjs",
+    "deploy:azure": "bash scripts/deploy-azure-container-app.sh",
+    "restart:azure": "bash scripts/restart-azure-container-app.sh"
+  },
+  "dependencies": {
+    "@azure/storage-blob": "^12.31.0",
+    "better-sqlite3": "^11.10.0",
+    "lucide-react": "^0.468.0",
+    "next": "^15.5.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
