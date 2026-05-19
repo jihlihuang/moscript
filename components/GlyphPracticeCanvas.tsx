@@ -22,11 +22,21 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const currentStrokeRef = useRef<Stroke | null>(null);
+  
+  // 預設給平板/電腦的筆粗為 10
   const [brushSize, setBrushSize] = useState(10);
   const [inkTexture, setInkTexture] = useState(0.7);
   const [guideOpacity, setGuideOpacity] = useState(0.28);
   const [velocitySensitive, setVelocitySensitive] = useState(true);
   const [strokeCount, setStrokeCount] = useState(0);
+
+  // 新增：元件掛載時偵測螢幕寬度，自動調整預設筆粗
+  useEffect(() => {
+    // 以 768px 作為手機與平板的分界 (對應 Tailwind 的 md 斷點)
+    if (window.innerWidth < 768) {
+      setBrushSize(7);
+    }
+  }, []);
 
   function getCanvasPoint(event: PointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
@@ -304,6 +314,28 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
     <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
       <div className="rounded-3xl border border-stone-200 bg-white p-3 shadow-sm sm:p-5">
         <div className="relative mx-auto aspect-square w-full max-w-[min(88vw,720px)] overflow-hidden rounded-3xl bg-stone-50">
+          
+          <div className="absolute left-3 top-3 z-20 flex flex-col gap-2 sm:left-4 sm:top-4">
+            <button
+              type="button"
+              onClick={undoStroke}
+              disabled={strokeCount === 0}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-stone-600 shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:text-stone-900 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              title="復原 (Undo)"
+            >
+              <RotateCcw className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={clearCanvas}
+              disabled={strokeCount === 0}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-stone-600 shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:text-red-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              title="清除畫面 (Clear)"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+          </div>
+
           <img
             src={glyph.imageUrl}
             alt={`${glyph.char}｜${glyph.author ?? "佚名"}`}
@@ -390,27 +422,6 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
               className="w-full accent-red-800"
             />
           </label>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={undoStroke}
-              disabled={strokeCount === 0}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RotateCcw className="h-4 w-4" />
-              復原
-            </button>
-            <button
-              type="button"
-              onClick={clearCanvas}
-              disabled={strokeCount === 0}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-sm font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Trash2 className="h-4 w-4" />
-              清除
-            </button>
-          </div>
 
           <div className="rounded-2xl bg-stone-50 p-3 text-sm text-stone-500">
             毛筆輪廓模式使用自然筆畫外形，並疊加墨色紋理；下筆較厚，提筆會收斂但不會過度尖銳。
