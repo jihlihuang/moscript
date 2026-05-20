@@ -23,9 +23,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const form = await req.formData();
   const file = form.get("file");
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "請上傳圖片檔" }, { status: 400 });
-  }
+  const hasNewImage = file instanceof File && file.size > 0 && Boolean(file.name);
 
   const char = onlyChinese(String(form.get("char") ?? glyph.char)).slice(0, 1);
   if (!char) {
@@ -38,10 +36,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   const source = String(form.get("source") ?? glyph.source ?? "").trim();
   const license = String(form.get("license") ?? glyph.license ?? "").trim();
   const qualityScore = Number(form.get("qualityScore") ?? glyph.quality_score ?? 0);
-  const storedImage = await storeGlyphImage({ file, char, author, scriptType, workTitle });
-  if ("error" in storedImage) {
+  const storedImage = hasNewImage ? await storeGlyphImage({ file, char, author, scriptType, workTitle }) : null;
+  if (storedImage && "error" in storedImage) {
     return NextResponse.json({ error: storedImage.error }, { status: 400 });
   }
+  const imageUrl = storedImage ? storedImage.imageUrl : glyph.image_url;
 
   db.prepare(`
     UPDATE glyphs
@@ -55,29 +54,32 @@ export async function POST(req: NextRequest, { params }: Params) {
     source || null,
     license || null,
     Number.isFinite(qualityScore) ? qualityScore : glyph.quality_score,
-    storedImage.imageUrl,
+    imageUrl,
     id
   );
   await syncDbToBlob();
-  await logAdminAction(req, user, "glyph_image_replace", {
+  await logAdminAction(req, user, hasNewImage ? "glyph_image_replace" : "glyph_update", {
     targetType: "glyph",
     targetId: id,
     details: {
       previousImageUrl: glyph.image_url,
-      imageUrl: storedImage.imageUrl,
-      blobName: storedImage.blobName,
-      storage: storedImage.storage,
+      imageUrl,
+      blobName: storedImage && "blobName" in storedImage ? storedImage.blobName : null,
+      storage: storedImage && "storage" in storedImage ? storedImage.storage : null,
       char,
       author: author || null,
       scriptType: scriptType || null,
       workTitle: workTitle || null,
+      source: source || null,
+      license: license || null,
+      qualityScore: Number.isFinite(qualityScore) ? qualityScore : glyph.quality_score,
     },
   });
 
   return NextResponse.json({
     ok: true,
-    imageUrl: storedImage.imageUrl,
-    blobName: storedImage.blobName,
-    storage: storedImage.storage,
+    imageUrl,
+    blobName: storedImage && "blobName" in storedImage ? storedImage.blobName : null,
+    storage: storedImage && "storage" in storedImage ? storedImage.storage : null,
   });
 }

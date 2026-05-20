@@ -496,20 +496,20 @@ export default function FrontStagePage() {
               </button>
             </form>
             <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 sm:mt-4">
-              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
+              <div className="mb-3 flex items-start justify-between gap-3 sm:items-center">
+                <div className="flex min-w-0 items-center gap-2">
                   <BookOpen className="h-5 w-5 text-red-600" />
-                  <div>
+                  <div className="min-w-0">
                     <h2 className="font-bold font-serif">目前集字</h2>
                     <p className="text-xs text-stone-500 sm:text-sm">點選單字可聚焦搜尋結果</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                   {activePosition !== null && (
                     <button
                       type="button"
                       onClick={() => setActivePosition(null)}
-                      className="rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
+                      className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-600 hover:border-red-700 hover:text-stone-900 sm:text-sm"
                     >
                       顯示全部
                     </button>
@@ -517,10 +517,11 @@ export default function FrontStagePage() {
                   <button
                     onClick={saveCollection}
                     disabled={isSavingCollection}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-sm font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
                   >
                     {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    {isSavingCollection ? "儲存中" : "儲存集字作品"}
+                    <span className="sm:hidden">{isSavingCollection ? "儲存中" : "儲存"}</span>
+                    <span className="hidden sm:inline">{isSavingCollection ? "儲存中" : "儲存集字作品"}</span>
                   </button>
                 </div>
               </div>
@@ -533,12 +534,12 @@ export default function FrontStagePage() {
                     const glyph = selected.find((item) => item.position === index);
                     const active = activePosition === index;
                     return (
-                      <div key={`${char}-selected-${index}`} className="group relative">
+                      <div key={`${char}-selected-${index}`} className="group relative w-full sm:w-auto">
                         <button
                           type="button"
                           onClick={() => toggleActivePosition(index)}
                           aria-pressed={active}
-                          className={`rounded-xl border p-1 transition ${
+                          className={`block w-full rounded-xl border p-1 transition sm:w-auto ${
                             active
                               ? "border-red-700 bg-red-700/10"
                               : "border-transparent hover:border-stone-400"
@@ -547,7 +548,7 @@ export default function FrontStagePage() {
                           {glyph ? (
                             <GlyphImage glyph={glyph} size={110} containerClassName="h-[82px] w-full sm:h-[110px] sm:w-[110px]" />
                           ) : (
-                            <div className="flex h-[82px] w-full items-center justify-center rounded-xl border border-dashed border-stone-300 font-serif text-4xl text-zinc-600 sm:h-[110px] sm:w-[110px] sm:text-5xl">
+                            <div className="flex h-[82px] w-full items-center justify-center rounded-xl border border-zinc-200 bg-white font-serif text-4xl text-zinc-600 sm:h-[110px] sm:w-[110px] sm:text-5xl">
                               {char}
                             </div>
                           )}
