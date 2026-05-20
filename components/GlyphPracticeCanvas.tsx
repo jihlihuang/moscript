@@ -24,7 +24,7 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
   const currentStrokeRef = useRef<Stroke | null>(null);
   
   // 預設給平板/電腦的筆粗為 10
-  const [brushSize, setBrushSize] = useState(15);
+  const [brushSize, setBrushSize] = useState(12);
   const [inkTexture, setInkTexture] = useState(0.7);
   const [guideOpacity, setGuideOpacity] = useState(0.28);
   const [velocitySensitive, setVelocitySensitive] = useState(true);
