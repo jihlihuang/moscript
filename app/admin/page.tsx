@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Database, ImagePlus, LogOut, Pencil, RefreshCw, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
@@ -43,21 +43,13 @@ function onlyChinese(value: string) {
   return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
 }
 
-const commonScriptTypes = ["篆", "隸", "楷", "行", "草", "未標註"];
-
 export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [keyword, setKeyword] = useState("");
   const [isComposingKeyword, setIsComposingKeyword] = useState(false);
-  const [uploadChar, setUploadChar] = useState("");
-  const [uploadAuthor, setUploadAuthor] = useState("");
-  const [uploadScriptType, setUploadScriptType] = useState("");
-  const [isComposingUploadChar, setIsComposingUploadChar] = useState(false);
-  const [isComposingUploadAuthor, setIsComposingUploadAuthor] = useState(false);
   const [queryAuthor, setQueryAuthor] = useState("");
   const [queryScriptType, setQueryScriptType] = useState("");
   const [glyphs, setGlyphs] = useState<GlyphDto[]>([]);
-  const [message, setMessage] = useState("");
   const [queryMessage, setQueryMessage] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<GlyphEditDraft | null>(null);
@@ -66,7 +58,6 @@ export default function AdminPage() {
   const [isForbidden, setIsForbidden] = useState(false);
   const [isStatsLoading, setIsStatsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
   const [savingGlyphId, setSavingGlyphId] = useState<number | null>(null);
   const [deletingGlyphId, setDeletingGlyphId] = useState<number | null>(null);
 
@@ -96,18 +87,6 @@ export default function AdminPage() {
     [stats]
   );
 
-  const uploadScriptOptions = useMemo(
-    () => [
-      ...new Set([
-        ...commonScriptTypes,
-        ...(stats?.scripts
-          .map((script) => script.label)
-          .filter((label) => label && label !== "未標註") ?? []),
-      ]),
-    ],
-    [stats]
-  );
-
   async function loadStats() {
     setIsStatsLoading(true);
     try {
@@ -118,7 +97,6 @@ export default function AdminPage() {
       }
       if (res.status === 403) {
         setIsForbidden(true);
-        setMessage("此帳號沒有後台權限");
         return;
       }
       setStats(await res.json());
@@ -267,39 +245,6 @@ export default function AdminPage() {
     }
   }
 
-  async function upload(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setIsUploading(true);
-    setMessage("上傳中...");
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    formData.set("char", onlyChinese(uploadChar).slice(0, 1));
-    formData.set("author", onlyChinese(uploadAuthor));
-    formData.set("scriptType", uploadScriptType === "未標註" ? "" : uploadScriptType);
-
-    try {
-      const res = await fetch("/api/admin/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        setMessage(json.error ?? "上傳失敗");
-        return;
-      }
-
-      setMessage(`已新增字圖 ID：${json.id}`);
-      form.reset();
-      setUploadChar("");
-      setUploadAuthor("");
-      setUploadScriptType("");
-      await loadStats();
-    } finally {
-      setIsUploading(false);
-    }
-  }
-
   useEffect(() => {
     async function loadCurrentUser() {
       const res = await fetch("/api/auth/me");
@@ -405,75 +350,16 @@ export default function AdminPage() {
               <ImagePlus className="h-5 w-5 text-red-600" />
               <h2 className="text-lg font-bold sm:text-xl">手動上傳字圖</h2>
             </div>
-            <form onSubmit={upload} className="space-y-3">
-              <input
-                name="char"
-                required
-                value={uploadChar}
-                onCompositionStart={() => setIsComposingUploadChar(true)}
-                onCompositionEnd={(e) => {
-                  setIsComposingUploadChar(false);
-                  setUploadChar(onlyChinese(e.currentTarget.value).slice(0, 1));
-                }}
-                onChange={(e) => {
-                  const nativeEvent = e.nativeEvent as InputEvent;
-                  const nextValue =
-                    isComposingUploadChar || nativeEvent.isComposing
-                      ? e.target.value
-                      : onlyChinese(e.target.value).slice(0, 1);
-                  setUploadChar(nextValue);
-                }}
-                placeholder="單字，例如：小"
-                disabled={isUploading}
-                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
-                autoComplete="off"
-              />
-              <input
-                name="author"
-                value={uploadAuthor}
-                onCompositionStart={() => setIsComposingUploadAuthor(true)}
-                onCompositionEnd={(e) => {
-                  setIsComposingUploadAuthor(false);
-                  setUploadAuthor(onlyChinese(e.currentTarget.value));
-                }}
-                onChange={(e) => {
-                  const nativeEvent = e.nativeEvent as InputEvent;
-                  setUploadAuthor(
-                    isComposingUploadAuthor || nativeEvent.isComposing
-                      ? e.target.value
-                      : onlyChinese(e.target.value)
-                  );
-                }}
-                placeholder="作者，例如：孫過庭"
-                disabled={isUploading}
-                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
-                autoComplete="off"
-              />
-              <select
-                name="scriptType"
-                value={uploadScriptType}
-                onChange={(e) => setUploadScriptType(e.target.value)}
-                disabled={isUploading}
-                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
-              >
-                <option value="">書體</option>
-                {uploadScriptOptions.map((scriptType) => (
-                  <option key={scriptType} value={scriptType}>
-                    {scriptType}
-                  </option>
-                ))}
-              </select>
-              <input name="workTitle" placeholder="作品，例如：書譜" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
-              <input name="source" placeholder="來源，例如：local-dataset" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
-              <input name="license" placeholder="授權，例如：non-commercial-research" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
-              <input name="qualityScore" type="number" defaultValue="0" placeholder="品質分數(排序用)" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700 disabled:opacity-70" />
-              <input name="file" required type="file" accept="image/*,.svg" disabled={isUploading} className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm disabled:opacity-70" />
-              <button disabled={isForbidden || isUploading} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-800 text-white">
-                {isUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                {isUploading ? "上傳中" : "上傳並寫入資料庫"}
-              </button>
-              {message && <div className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{message}</div>}
-            </form>
+            <p className="mb-4 text-sm leading-6 text-stone-600">
+              上傳工具已移到獨立頁面，手機版會提供更大的預覽與擦除區，適合拍照後連續整理入庫。
+            </p>
+            <Link
+              href="/admin/upload"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700"
+            >
+              <Upload className="h-4 w-4" />
+              開啟連續上傳
+            </Link>
           </section>
         </aside>
 
