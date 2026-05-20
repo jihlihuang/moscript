@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Database, ImagePlus, LogOut, Pencil, RefreshCw, Save, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Database, ImagePlus, LogOut, Pencil, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
 
@@ -24,16 +24,6 @@ type GlyphResponse = {
   total: number;
 };
 
-type GlyphEditDraft = {
-  char: string;
-  author: string;
-  scriptType: string;
-  workTitle: string;
-  source: string;
-  license: string;
-  qualityScore: string;
-};
-
 type CurrentUser = {
   email: string;
   name: string | null;
@@ -51,14 +41,11 @@ export default function AdminPage() {
   const [queryScriptType, setQueryScriptType] = useState("");
   const [glyphs, setGlyphs] = useState<GlyphDto[]>([]);
   const [queryMessage, setQueryMessage] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<GlyphEditDraft | null>(null);
   const [activeChar, setActiveChar] = useState<string | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isForbidden, setIsForbidden] = useState(false);
   const [isStatsLoading, setIsStatsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [savingGlyphId, setSavingGlyphId] = useState<number | null>(null);
   const [deletingGlyphId, setDeletingGlyphId] = useState<number | null>(null);
 
   const glyphsByChar = useMemo(
@@ -105,11 +92,29 @@ export default function AdminPage() {
     }
   }
 
-  async function search(nextScriptType = queryScriptType) {
-    setQueryMessage("");
-    setEditingId(null);
-    setEditDraft(null);
+  function adminSearchPath(nextActiveChar = activeChar) {
+    const params = new URLSearchParams();
     const cleanedKeyword = onlyChinese(keyword);
+    if (cleanedKeyword) params.set("q", cleanedKeyword);
+    if (queryAuthor) params.set("author", queryAuthor);
+    if (queryScriptType) params.set("scriptType", queryScriptType);
+    if (nextActiveChar) params.set("activeChar", nextActiveChar);
+    const query = params.toString();
+    return query ? `/admin?${query}` : "/admin";
+  }
+
+  function glyphEditHref(glyph: GlyphDto) {
+    const params = new URLSearchParams();
+    params.set("replaceGlyphId", String(glyph.id));
+    params.set("returnTo", adminSearchPath(activeChar ?? glyph.char));
+    return `/admin/upload?${params.toString()}`;
+  }
+
+  async function search(nextScriptType = queryScriptType, options?: { keyword?: string; author?: string; activeChar?: string | null }) {
+    setQueryMessage("");
+    const searchKeyword = options?.keyword ?? keyword;
+    const searchAuthor = options?.author ?? queryAuthor;
+    const cleanedKeyword = onlyChinese(searchKeyword);
     if (cleanedKeyword !== keyword) {
       setKeyword(cleanedKeyword);
     }
@@ -121,7 +126,7 @@ export default function AdminPage() {
     }
     const params = new URLSearchParams();
     if (cleanedKeyword) params.set("q", cleanedKeyword);
-    if (queryAuthor) params.set("author", queryAuthor);
+    if (searchAuthor) params.set("author", searchAuthor);
     if (nextScriptType) params.set("scriptType", nextScriptType);
     setIsSearching(true);
     try {
@@ -132,7 +137,9 @@ export default function AdminPage() {
       const resultChars = Object.keys(json.results);
       setGlyphs(nextGlyphs);
       setActiveChar((current) =>
-        current && resultChars.includes(current)
+        options?.activeChar && resultChars.includes(options.activeChar)
+          ? options.activeChar
+          : current && resultChars.includes(current)
           ? current
           : keywordChars.find((char) => resultChars.includes(char)) ?? resultChars[0] ?? null
       );
@@ -147,73 +154,7 @@ export default function AdminPage() {
     setQueryScriptType("");
     setGlyphs([]);
     setQueryMessage("");
-    setEditingId(null);
-    setEditDraft(null);
     setActiveChar(null);
-  }
-
-  function startEdit(glyph: GlyphDto) {
-    setEditingId(glyph.id);
-    setEditDraft({
-      char: glyph.char,
-      author: glyph.author ?? "",
-      scriptType: glyph.scriptType ?? "",
-      workTitle: glyph.workTitle ?? "",
-      source: glyph.source ?? "",
-      license: glyph.license ?? "",
-      qualityScore: String(glyph.qualityScore ?? 0),
-    });
-    setQueryMessage("");
-  }
-
-  function updateDraft(field: keyof GlyphEditDraft, value: string) {
-    setEditDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
-  }
-
-  async function saveGlyph(id: number) {
-    if (!editDraft) return;
-    setSavingGlyphId(id);
-    setQueryMessage("儲存中...");
-    try {
-      const res = await fetch(`/api/glyphs/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...editDraft,
-          qualityScore: Number(editDraft.qualityScore || 0),
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        setQueryMessage(json.error ?? "儲存失敗");
-        return;
-      }
-
-      setGlyphs((prev) =>
-        prev.map((glyph) =>
-          glyph.id === id
-            ? {
-                ...glyph,
-                char: editDraft.char,
-                author: editDraft.author || null,
-                scriptType: editDraft.scriptType || null,
-                workTitle: editDraft.workTitle || null,
-                source: editDraft.source || null,
-                license: editDraft.license || null,
-                qualityScore: Number(editDraft.qualityScore || 0),
-              }
-            : glyph
-        )
-      );
-      setEditingId(null);
-      setEditDraft(null);
-      setActiveChar(editDraft.char);
-      setQueryMessage("已更新字圖資料");
-      await loadStats();
-    } finally {
-      setSavingGlyphId(null);
-    }
   }
 
   async function deleteGlyph(id: number) {
@@ -234,10 +175,6 @@ export default function AdminPage() {
       if (activeChar && !nextGlyphs.some((glyph) => glyph.char === activeChar)) {
         setActiveChar(nextGlyphs[0]?.char ?? null);
       }
-      if (editingId === id) {
-        setEditingId(null);
-        setEditDraft(null);
-      }
       setQueryMessage(json.changes ? "已刪除字圖" : "找不到要刪除的字圖");
       await loadStats();
     } finally {
@@ -254,6 +191,22 @@ export default function AdminPage() {
 
     void loadCurrentUser();
     loadStats();
+
+    const params = new URLSearchParams(window.location.search);
+    const restoredKeyword = params.get("q") ?? "";
+    const restoredAuthor = params.get("author") ?? "";
+    const restoredScriptType = params.get("scriptType") ?? "";
+    const restoredActiveChar = params.get("activeChar");
+    if (restoredKeyword || restoredAuthor || restoredScriptType) {
+      setKeyword(restoredKeyword);
+      setQueryAuthor(restoredAuthor);
+      setQueryScriptType(restoredScriptType);
+      void search(restoredScriptType, {
+        keyword: restoredKeyword,
+        author: restoredAuthor,
+        activeChar: restoredActiveChar,
+      });
+    }
   }, []);
 
   return (
@@ -477,8 +430,6 @@ export default function AdminPage() {
                       type="button"
                       onClick={() => {
                         setActiveChar(null);
-                        setEditingId(null);
-                        setEditDraft(null);
                       }}
                       aria-pressed={activeChar === null}
                       className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
@@ -497,8 +448,6 @@ export default function AdminPage() {
                           type="button"
                           onClick={() => {
                             setActiveChar(char);
-                            setEditingId(null);
-                            setEditDraft(null);
                           }}
                           aria-pressed={active}
                           className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
@@ -518,87 +467,22 @@ export default function AdminPage() {
               {visibleGlyphs.map((glyph) => (
                 <div key={glyph.id} className="rounded-2xl border border-stone-200 bg-stone-50 p-2 sm:p-3">
                   <GlyphImage glyph={glyph} size={108} containerClassName="h-[96px] w-full sm:h-[108px] sm:w-full" />
-                  {editingId === glyph.id && editDraft ? (
-                    <div className="mt-3 space-y-2">
-                      <input
-                        value={editDraft.char}
-                        onChange={(e) => updateDraft("char", e.target.value)}
-                        maxLength={2}
-                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
-                        placeholder="字"
-                      />
-                      <input
-                        value={editDraft.author}
-                        onChange={(e) => updateDraft("author", e.target.value)}
-                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
-                        placeholder="作者"
-                      />
-                      <input
-                        value={editDraft.scriptType}
-                        onChange={(e) => updateDraft("scriptType", e.target.value)}
-                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
-                        placeholder="書體"
-                      />
-                      <input
-                        value={editDraft.workTitle}
-                        onChange={(e) => updateDraft("workTitle", e.target.value)}
-                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
-                        placeholder="作品"
-                      />
-                      <input
-                        value={editDraft.source}
-                        onChange={(e) => updateDraft("source", e.target.value)}
-                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
-                        placeholder="來源"
-                      />
-                      <input
-                        value={editDraft.license}
-                        onChange={(e) => updateDraft("license", e.target.value)}
-                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
-                        placeholder="授權"
-                      />
-                      <input
-                        value={editDraft.qualityScore}
-                        onChange={(e) => updateDraft("qualityScore", e.target.value)}
-                        type="number"
-                        className="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-sm outline-none focus:border-red-700"
-                        placeholder="品質分數(排序用)"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => void saveGlyph(glyph.id)}
-                          disabled={savingGlyphId === glyph.id}
-                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-red-800 px-2 py-2 text-sm font-bold hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {savingGlyphId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                          {savingGlyphId === glyph.id ? "儲存中" : "儲存"}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditingId(null);
-                            setEditDraft(null);
-                          }}
-                          disabled={savingGlyphId === glyph.id}
-                          className="inline-flex items-center justify-center rounded-lg border border-stone-300 px-2 py-2 text-stone-600 hover:border-zinc-500"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="mt-2 text-sm font-medium">{glyph.char}｜{glyph.author || "佚名"}</div>
-                      <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
-                      <div className="mt-1 truncate text-xs text-zinc-600">ID {glyph.id}</div>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          onClick={() => startEdit(glyph)}
-                          disabled={isForbidden}
-                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-stone-300 px-2 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-stone-300 disabled:hover:text-stone-600"
+                  <div className="mt-2 text-sm font-medium">{glyph.char}｜{glyph.author || "佚名"}</div>
+                  <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
+                  <div className="mt-1 truncate text-xs text-zinc-600">ID {glyph.id}</div>
+                  <div className="mt-3 flex gap-2">
+                        <Link
+                          href={glyphEditHref(glyph)}
+                          aria-disabled={isForbidden}
+                          className={`inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-stone-300 px-2 py-2 text-sm font-bold ${
+                            isForbidden
+                              ? "pointer-events-none cursor-not-allowed text-stone-400 opacity-50"
+                              : "text-stone-600 hover:border-red-700 hover:text-stone-900"
+                          }`}
                         >
                           <Pencil className="h-4 w-4" />
                           修改
-                        </button>
+                        </Link>
                         <button
                           onClick={() => void deleteGlyph(glyph.id)}
                           disabled={isForbidden || deletingGlyphId === glyph.id}
@@ -606,9 +490,7 @@ export default function AdminPage() {
                         >
                           {deletingGlyphId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                         </button>
-                      </div>
-                    </>
-                  )}
+                  </div>
                 </div>
               ))}
               </div>

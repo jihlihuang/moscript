@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ImagePlus, LogOut, RefreshCw } from "lucide-react";
-import { AdminGlyphUploadForm } from "@/components/AdminGlyphUploadForm";
+import { AdminGlyphUploadForm, type ReplaceGlyphTarget } from "@/components/AdminGlyphUploadForm";
 import { LogoMark } from "@/components/LogoMark";
 
 type Stats = {
@@ -23,6 +23,11 @@ export default function AdminUploadPage() {
   const [message, setMessage] = useState("");
   const [isForbidden, setIsForbidden] = useState(false);
   const [isStatsLoading, setIsStatsLoading] = useState(true);
+  const [replaceGlyphId, setReplaceGlyphId] = useState<string | null>(null);
+  const [replaceGlyph, setReplaceGlyph] = useState<ReplaceGlyphTarget | null>(null);
+  const [isReplaceGlyphLoading, setIsReplaceGlyphLoading] = useState(false);
+  const [backHref, setBackHref] = useState("/admin");
+  const isReplaceMode = Boolean(replaceGlyphId);
 
   const uploadScriptOptions = useMemo(
     () => [
@@ -41,7 +46,7 @@ export default function AdminUploadPage() {
     try {
       const res = await fetch("/api/admin/stats");
       if (res.status === 401) {
-        window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/admin/upload")}`;
+        window.location.href = `/api/auth/google?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`;
         return;
       }
       if (res.status === 403) {
@@ -55,6 +60,33 @@ export default function AdminUploadPage() {
     }
   }
 
+  async function loadReplaceGlyph(id: string) {
+    setIsReplaceGlyphLoading(true);
+    setMessage("讀取要替換的字圖資料...");
+    try {
+      const res = await fetch(`/api/glyphs/${id}`);
+      if (res.status === 401) {
+        window.location.href = `/api/auth/google?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+        return;
+      }
+      if (res.status === 403) {
+        setIsForbidden(true);
+        setMessage("此帳號沒有後台權限");
+        return;
+      }
+      const json = await res.json();
+      if (!res.ok) {
+        setMessage(json.error ?? "讀取字圖失敗");
+        setReplaceGlyph(null);
+        return;
+      }
+      setReplaceGlyph(json);
+      setMessage("");
+    } finally {
+      setIsReplaceGlyphLoading(false);
+    }
+  }
+
   useEffect(() => {
     async function loadCurrentUser() {
       const res = await fetch("/api/auth/me");
@@ -64,6 +96,17 @@ export default function AdminUploadPage() {
 
     void loadCurrentUser();
     void loadStats();
+
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("replaceGlyphId");
+    const returnTo = params.get("returnTo");
+    if (returnTo?.startsWith("/admin")) {
+      setBackHref(returnTo);
+    }
+    setReplaceGlyphId(id);
+    if (id) {
+      void loadReplaceGlyph(id);
+    }
   }, []);
 
   return (
@@ -73,9 +116,11 @@ export default function AdminUploadPage() {
           <div className="flex min-w-0 items-center gap-3">
             <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
             <div className="min-w-0">
-              <h1 className="font-serif text-xl font-bold sm:text-2xl">手動上傳字圖</h1>
+              <h1 className="font-serif text-xl font-bold sm:text-2xl">
+                {isReplaceMode ? "重新上傳字圖" : "手動上傳字圖"}
+              </h1>
               <p className="truncate text-xs text-stone-500 sm:text-sm">
-                轉黑白、調整解析度、簡易擦除後存入 Blob{user ? `｜${user.email}` : ""}
+                轉黑白、調整解析度、簡易擦除後以 Canvas 結果存檔{user ? `｜${user.email}` : ""}
               </p>
             </div>
           </div>
@@ -86,7 +131,7 @@ export default function AdminUploadPage() {
                 登出
               </button>
             </form>
-            <Link href="/admin" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white sm:px-4 sm:text-sm">
+            <Link href={backHref} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white sm:px-4 sm:text-sm">
               <ArrowLeft className="h-4 w-4" />
               回後台
             </Link>
@@ -108,7 +153,9 @@ export default function AdminUploadPage() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               <ImagePlus className="h-5 w-5 shrink-0 text-red-600" />
-              <h2 className="truncate text-lg font-bold sm:text-xl">連續上傳</h2>
+              <h2 className="truncate text-lg font-bold sm:text-xl">
+                {isReplaceMode ? `替換 ${replaceGlyph?.char ?? ""} 字圖圖片` : "連續上傳"}
+              </h2>
             </div>
             <button
               onClick={() => void loadStats()}
@@ -120,11 +167,22 @@ export default function AdminUploadPage() {
             </button>
           </div>
           {message && <div className="mb-4 rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{message}</div>}
-          <AdminGlyphUploadForm
-            scriptOptions={uploadScriptOptions}
-            isForbidden={isForbidden}
-            onUploaded={loadStats}
-          />
+          {isReplaceMode && isReplaceGlyphLoading ? (
+            <div className="rounded-2xl border border-dashed border-stone-300 p-8 text-center text-stone-500">
+              讀取字圖資料中...
+            </div>
+          ) : isReplaceMode && !replaceGlyph ? (
+            <div className="rounded-2xl border border-dashed border-stone-300 p-8 text-center text-stone-500">
+              找不到要替換的字圖，請回後台重新選擇。
+            </div>
+          ) : (
+            <AdminGlyphUploadForm
+              scriptOptions={uploadScriptOptions}
+              isForbidden={isForbidden}
+              onUploaded={isReplaceMode ? undefined : loadStats}
+              replaceGlyph={replaceGlyph}
+            />
+          )}
         </section>
       </section>
     </main>

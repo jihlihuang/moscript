@@ -1,12 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, syncDbToBlob } from "@/lib/db";
+import { getDb, type GlyphRow, syncDbToBlob } from "@/lib/db";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
+import { toGlyphDto } from "@/lib/glyphs";
 
 export const runtime = "nodejs";
 
 type Params = {
   params: Promise<{ id: string }>;
 };
+
+export async function GET(req: NextRequest, { params }: Params) {
+  const user = requireRequestUser(req);
+  if (!user) return unauthorized();
+  if (!isAdminAllowed(user)) return forbidden();
+
+  const { id } = await params;
+  const db = await getDb();
+  const glyph = db.prepare("SELECT * FROM glyphs WHERE id = ?").get(id) as GlyphRow | undefined;
+  if (!glyph) {
+    return NextResponse.json({ error: "找不到字圖" }, { status: 404 });
+  }
+
+  return NextResponse.json(toGlyphDto(glyph));
+}
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   const user = requireRequestUser(req);

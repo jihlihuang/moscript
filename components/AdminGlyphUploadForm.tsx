@@ -22,7 +22,7 @@ const allowedUploadImageExtensions = [
   "tif",
   "tiff",
 ];
-const uploadImageAccept = allowedUploadImageExtensions.map((extension) => `.${extension}`).join(",");
+export const uploadImageAccept = allowedUploadImageExtensions.map((extension) => `.${extension}`).join(",");
 const allowedUploadImageLabel = allowedUploadImageExtensions.join("、");
 
 function onlyChinese(value: string) {
@@ -37,7 +37,7 @@ function getFileExtension(fileName: string) {
   return fileName.split(".").pop()?.toLowerCase() ?? "";
 }
 
-function isAllowedUploadImage(file: File) {
+export function isAllowedUploadImage(file: File) {
   const extension = getFileExtension(file.name);
   const hasAllowedExtension = allowedUploadImageExtensions.includes(extension);
   const hasImageMime = !file.type || file.type.startsWith("image/");
@@ -426,7 +426,7 @@ function drawTrimmedInk(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D
   return true;
 }
 
-function imageToBlackWhitePng(file: File) {
+export function imageToBlackWhitePng(file: File) {
   return new Promise<File>((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
     const image = new window.Image();
@@ -506,22 +506,41 @@ function canvasToPngFile(canvas: HTMLCanvasElement, fileName: string) {
   });
 }
 
+export type ReplaceGlyphTarget = {
+  id: number;
+  char: string;
+  author?: string | null;
+  scriptType?: string | null;
+  workTitle?: string | null;
+  source?: string | null;
+  license?: string | null;
+  qualityScore?: number;
+  imageUrl?: string | null;
+};
+
 export function AdminGlyphUploadForm({
   scriptOptions,
   isForbidden,
   onUploaded,
+  replaceGlyph,
 }: {
   scriptOptions: string[];
   isForbidden?: boolean;
   onUploaded?: () => void | Promise<void>;
+  replaceGlyph?: ReplaceGlyphTarget | null;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isErasingUploadPreviewRef = useRef(false);
   const uploadUndoStackRef = useRef<ImageData[]>([]);
+  const isReplacingGlyph = Boolean(replaceGlyph);
   const [uploadChar, setUploadChar] = useState("");
   const [uploadAuthor, setUploadAuthor] = useState("");
   const [uploadScriptType, setUploadScriptType] = useState("");
+  const [uploadWorkTitle, setUploadWorkTitle] = useState("");
+  const [uploadSource, setUploadSource] = useState("");
+  const [uploadLicense, setUploadLicense] = useState("");
+  const [uploadQualityScore, setUploadQualityScore] = useState("0");
   const [isComposingUploadChar, setIsComposingUploadChar] = useState(false);
   const [isComposingUploadAuthor, setIsComposingUploadAuthor] = useState(false);
   const [message, setMessage] = useState("");
@@ -561,15 +580,21 @@ export function AdminGlyphUploadForm({
     setIsUploading(true);
     setMessage("上傳中...");
     const form = e.currentTarget;
-    const formData = new FormData(form);
-    const renderedFile = await canvasToPngFile(canvas, processedUploadFile.name);
-    formData.set("char", onlyChinese(uploadChar).slice(0, 1));
-    formData.set("author", onlyChinese(uploadAuthor));
-    formData.set("scriptType", uploadScriptType === "未標註" ? "" : uploadScriptType);
-    formData.set("file", renderedFile, renderedFile.name);
 
     try {
-      const res = await fetch("/api/admin/upload", {
+      const formData = new FormData(form);
+      const renderedFile = await canvasToPngFile(canvas, processedUploadFile.name);
+      formData.set("char", onlyChinese(uploadChar).slice(0, 1));
+      formData.set("author", onlyChinese(uploadAuthor));
+      formData.set("scriptType", uploadScriptType === "未標註" ? "" : uploadScriptType);
+      formData.set("workTitle", uploadWorkTitle);
+      formData.set("source", uploadSource);
+      formData.set("license", uploadLicense);
+      formData.set("qualityScore", uploadQualityScore);
+      formData.set("file", renderedFile, renderedFile.name);
+
+      const endpoint = replaceGlyph ? `/api/glyphs/${replaceGlyph.id}/image` : "/api/admin/upload";
+      const res = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -580,10 +605,18 @@ export function AdminGlyphUploadForm({
         return;
       }
 
-      setMessage(`已新增字圖 ID：${json.id}，已存入 Blob：${json.blobName ?? json.imageUrl}`);
-      setUploadChar("");
+      setMessage(
+        replaceGlyph
+          ? `已替換字圖 ID：${replaceGlyph.id} 的圖片`
+          : `已新增字圖 ID：${json.id}，已存入 Blob：${json.blobName ?? json.imageUrl}`
+      );
+      if (!replaceGlyph) {
+        setUploadChar("");
+      }
       clearUploadImage();
       await onUploaded?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "上傳失敗");
     } finally {
       setIsUploading(false);
     }
@@ -739,6 +772,19 @@ export function AdminGlyphUploadForm({
     image.src = uploadPreviewUrl;
   }, [uploadPreviewUrl]);
 
+  useEffect(() => {
+    if (!replaceGlyph) return;
+    setUploadChar(onlyChinese(replaceGlyph.char).slice(0, 1));
+    setUploadAuthor(onlyChinese(replaceGlyph.author ?? ""));
+    setUploadScriptType(replaceGlyph.scriptType ?? "");
+    setUploadWorkTitle(replaceGlyph.workTitle ?? "");
+    setUploadSource(replaceGlyph.source ?? "");
+    setUploadLicense(replaceGlyph.license ?? "");
+    setUploadQualityScore(String(replaceGlyph.qualityScore ?? 0));
+    setMessage("");
+    clearUploadImage();
+  }, [replaceGlyph?.id]);
+
   return (
     <form onSubmit={upload} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] lg:gap-5">
       <div className="space-y-3">
@@ -807,20 +853,37 @@ export function AdminGlyphUploadForm({
             </option>
           ))}
         </select>
-        <input name="workTitle" placeholder="作品，例如：書譜" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-        <input name="source" placeholder="來源，例如：local-dataset" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-        <input name="license" placeholder="授權，例如：non-commercial-research" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-        <input name="qualityScore" type="number" defaultValue="0" placeholder="品質分數(排序用)" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+        <input name="workTitle" value={uploadWorkTitle} onChange={(e) => setUploadWorkTitle(e.target.value)} placeholder="作品，例如：書譜" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+        <input name="source" value={uploadSource} onChange={(e) => setUploadSource(e.target.value)} placeholder="來源，例如：local-dataset" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+        <input name="license" value={uploadLicense} onChange={(e) => setUploadLicense(e.target.value)} placeholder="授權，例如：non-commercial-research" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+        <input name="qualityScore" type="number" value={uploadQualityScore} onChange={(e) => setUploadQualityScore(e.target.value)} placeholder="品質分數(排序用)" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
         <button disabled={isForbidden || isUploading || isProcessingUploadImage || !processedUploadFile} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800">
           {isUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {isUploading ? "上傳中" : "上傳並寫入資料庫"}
+          {isUploading ? "上傳中" : isReplacingGlyph ? "替換字圖圖片" : "上傳並寫入資料庫"}
         </button>
         {message && <div className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{message}</div>}
       </div>
 
-      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
+      <div className="space-y-3">
+        {replaceGlyph?.imageUrl && (
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-xs text-stone-500">
+              <span className="truncate">原本的字圖</span>
+              <span className="shrink-0">ID {replaceGlyph.id}</span>
+            </div>
+            <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white">
+              <img
+                src={replaceGlyph.imageUrl}
+                alt={`${replaceGlyph.char} 原本的字圖`}
+                className="max-h-full max-w-full object-contain p-4"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
         <div className="mb-2 flex items-center justify-between gap-2 text-xs text-stone-500">
-          <span className="truncate">{uploadFileName || "黑白預覽"}</span>
+          <span className="truncate">{uploadFileName || (isReplacingGlyph ? "新的 Canvas 預覽" : "黑白預覽")}</span>
           <span className="shrink-0">
             {uploadPreviewDimensions
               ? `${uploadPreviewDimensions.width}x${uploadPreviewDimensions.height}`
@@ -873,6 +936,7 @@ export function AdminGlyphUploadForm({
               選擇或拍攝圖檔後，這裡會顯示黑白化與裁放後的預覽。
             </span>
           )}
+        </div>
         </div>
       </div>
     </form>

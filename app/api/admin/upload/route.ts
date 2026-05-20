@@ -1,55 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
 import { getDb, syncDbToBlob } from "@/lib/db";
-import { glyphBlobName, glyphImageUrl, hasBlobConfig, uploadBufferToBlob } from "@/lib/blob-storage";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
+import { onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
 
 export const runtime = "nodejs";
-
-const allowedImageExtensions = new Set([
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".webp",
-  ".gif",
-  ".svg",
-  ".bmp",
-  ".ico",
-  ".avif",
-  ".heic",
-  ".heif",
-  ".tif",
-  ".tiff",
-]);
-const allowedImageExtensionLabel = Array.from(allowedImageExtensions)
-  .map((extension) => extension.slice(1))
-  .join("、");
-
-function safePart(value: string) {
-  return value.replace(/[\/:*?"<>|\s]+/g, "_").replace(/^_+|_+$/g, "") || "未命名";
-}
-
-function onlyChinese(value: string) {
-  return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
-}
-
-async function uploadGlyphBuffer(buffer: Buffer, blobName: string, contentType?: string) {
-  if (hasBlobConfig()) {
-    await uploadBufferToBlob(buffer, blobName, contentType);
-    return "blob";
-  }
-
-  const publicRoot = path.join(process.cwd(), "public");
-  const localPath = path.join(publicRoot, ...blobName.split("/"));
-  const relativePath = path.relative(publicRoot, localPath);
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new Error("Invalid glyph upload path.");
-  }
-  await fs.mkdir(path.dirname(localPath), { recursive: true });
-  await fs.writeFile(localPath, buffer);
-  return "local";
-}
 
 export async function POST(req: NextRequest) {
   const user = requireRequestUser(req);
@@ -75,17 +29,11 @@ export async function POST(req: NextRequest) {
   const license = String(form.get("license") ?? "non-commercial-research").trim();
   const qualityScore = Number(form.get("qualityScore") ?? 0);
 
-  const ext = path.extname(file.name || ".png").toLowerCase() || ".png";
-  if (!allowedImageExtensions.has(ext) || (file.type && !file.type.startsWith("image/"))) {
-    return NextResponse.json({ error: `只支援圖檔格式：${allowedImageExtensionLabel}` }, { status: 400 });
+  const storedImage = await storeGlyphImage({ file, char, author, scriptType, workTitle });
+  if ("error" in storedImage) {
+    return NextResponse.json({ error: storedImage.error }, { status: 400 });
   }
 
-  const fileName = `${safePart(author || "佚名")}_${safePart(scriptType || "未標註")}_${safePart(workTitle || "未標題")}_${Date.now()}${ext}`;
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const blobName = glyphBlobName(char, fileName);
-  const storage = await uploadGlyphBuffer(bytes, blobName, file.type || undefined);
-
-  const imageUrl = glyphImageUrl(char, fileName);
   const db = await getDb();
   const info = db.prepare(`
     INSERT INTO glyphs (
@@ -96,7 +44,7 @@ export async function POST(req: NextRequest) {
     author || null,
     scriptType || null,
     workTitle || null,
-    imageUrl,
+    storedImage.imageUrl,
     source || "manual-upload",
     license || "non-commercial-research",
     qualityScore
@@ -105,13 +53,13 @@ export async function POST(req: NextRequest) {
   await logAdminAction(req, user, "glyph_upload", {
     targetType: "glyph",
     targetId: info.lastInsertRowid,
-    details: { char, author, scriptType, workTitle, source, license, imageUrl, storage },
+    details: { char, author, scriptType, workTitle, source, license, imageUrl: storedImage.imageUrl, storage: storedImage.storage },
   });
 
   return NextResponse.json({
     id: info.lastInsertRowid,
-    imageUrl,
-    blobName,
-    storage,
+    imageUrl: storedImage.imageUrl,
+    blobName: storedImage.blobName,
+    storage: storedImage.storage,
   });
 }

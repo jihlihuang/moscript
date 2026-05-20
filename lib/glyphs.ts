@@ -53,13 +53,19 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
       ELSE 0
     END
   `;
+  const scriptPrioritySql = `
+    CASE
+      WHEN script_type LIKE '%草%' THEN 0
+      ELSE 1
+    END
+  `;
 
   if (chars.length === 0 && !options.author && !options.scriptType) {
     const rows = db
       .prepare(`
         SELECT *
         FROM glyphs
-        ORDER BY ${unknownAuthorSql}, id DESC
+        ORDER BY ${scriptPrioritySql}, ${unknownAuthorSql}, id DESC
       `)
       .all() as GlyphRow[];
     return rows.map(toGlyphDto);
@@ -109,7 +115,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
     SELECT *
     FROM ranked
     WHERE rn <= ?
-    ORDER BY CASE WHEN ? = '' THEN 999 ELSE instr(?, char) END, char, rn
+    ORDER BY CASE WHEN ? = '' THEN 999 ELSE instr(?, char) END, char, ${scriptPrioritySql}, rn
   `;
   const unlimitedSql = `
     SELECT *
@@ -118,6 +124,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
     ORDER BY
       CASE WHEN ? = '' THEN 999 ELSE instr(?, char) END,
       char,
+      ${scriptPrioritySql},
       ${unknownAuthorSql},
       COALESCE(script_type, ''),
       quality_score DESC,
@@ -162,7 +169,18 @@ export async function listScriptTypesForGlyphs(options: Pick<SearchGlyphOptions,
         WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
         ELSE script_type
       END
-    ORDER BY count DESC, label
+    ORDER BY
+      CASE
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%草%' THEN 0
+        ELSE 1
+      END,
+      count DESC,
+      label
   `).all(...params) as ScriptTypeStat[];
 
   return rows;
