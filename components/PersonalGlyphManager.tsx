@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, RefreshCw, Trash2 } from "lucide-react";
 import { GlyphImage } from "@/components/GlyphImage";
 
 export type PersonalGlyph = {
@@ -17,24 +17,46 @@ export type PersonalGlyph = {
   createdAt: string;
 };
 
+const unknownScriptLabel = "未標註";
+
+function getScriptLabel(scriptType: string | null) {
+  return scriptType?.trim() || unknownScriptLabel;
+}
+
 export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: PersonalGlyph[] }) {
   const [glyphs, setGlyphs] = useState(initialGlyphs);
   const [queryChar, setQueryChar] = useState("");
   const [queryAuthor, setQueryAuthor] = useState("");
-  const [queryScriptType, setQueryScriptType] = useState("");
+  const [selectedScriptTypes, setSelectedScriptTypes] = useState<string[]>([]);
   const [queryWorkTitle, setQueryWorkTitle] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState<"all" | "public" | "private">("all");
   const [busyId, setBusyId] = useState<number | null>(null);
+
+  const scriptTypeOptions = useMemo(
+    () =>
+      Array.from(new Set(glyphs.map((glyph) => getScriptLabel(glyph.scriptType)))).sort((a, b) =>
+        a.localeCompare(b, "zh-Hant")
+      ),
+    [glyphs]
+  );
   
   const filteredGlyphs = glyphs.filter((glyph) => {
     const charMatch = !queryChar.trim() || glyph.char.includes(queryChar.trim());
     const authorMatch = !queryAuthor.trim() || (glyph.author && glyph.author.includes(queryAuthor.trim()));
-    const scriptMatch = !queryScriptType.trim() || (glyph.scriptType && glyph.scriptType.includes(queryScriptType.trim()));
+    const scriptMatch = selectedScriptTypes.length === 0 || selectedScriptTypes.includes(getScriptLabel(glyph.scriptType));
     const workMatch = !queryWorkTitle.trim() || (glyph.workTitle && glyph.workTitle.includes(queryWorkTitle.trim()));
     const matchesVisibility = visibilityFilter === "all" || glyph.visibility === visibilityFilter;
     
     return charMatch && authorMatch && scriptMatch && workMatch && matchesVisibility;
   });
+
+  function toggleScriptType(scriptType: string) {
+    setSelectedScriptTypes((current) =>
+      current.includes(scriptType)
+        ? current.filter((item) => item !== scriptType)
+        : [...current, scriptType]
+    );
+  }
 
   async function updateVisibility(id: number, visibility: "public" | "private") {
     setBusyId(id);
@@ -79,7 +101,7 @@ export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: Persona
   return (
     <div className="space-y-3">
       <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <input
             value={queryChar}
             onChange={(event) => setQueryChar(event.target.value)}
@@ -90,12 +112,6 @@ export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: Persona
             value={queryAuthor}
             onChange={(event) => setQueryAuthor(event.target.value)}
             placeholder="作者"
-            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
-          />
-          <input
-            value={queryScriptType}
-            onChange={(event) => setQueryScriptType(event.target.value)}
-            placeholder="書體"
             className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
           />
           <input
@@ -122,6 +138,40 @@ export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: Persona
               {label}
             </button>
           ))}
+        </div>
+      </div>
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setSelectedScriptTypes([])}
+            className={`inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-sm font-bold transition ${
+              selectedScriptTypes.length === 0
+                ? "bg-red-800 text-white"
+                : "bg-white text-stone-600 hover:text-stone-900"
+            }`}
+          >
+            全部書體
+          </button>
+          {scriptTypeOptions.map((scriptType) => {
+            const isSelected = selectedScriptTypes.includes(scriptType);
+            return (
+              <button
+                key={scriptType}
+                type="button"
+                onClick={() => toggleScriptType(scriptType)}
+                className={`inline-flex min-h-9 items-center justify-center gap-1 rounded-xl px-3 py-2 text-sm font-bold transition ${
+                  isSelected
+                    ? "bg-red-800 text-white"
+                    : "bg-white text-stone-600 hover:text-stone-900"
+                }`}
+                aria-pressed={isSelected}
+              >
+                {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
+                {scriptType}
+              </button>
+            );
+          })}
         </div>
       </div>
 

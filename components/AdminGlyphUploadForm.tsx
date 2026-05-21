@@ -4,10 +4,13 @@ import { ChangeEvent, FormEvent, PointerEvent, useEffect, useRef, useState } fro
 import { Check, Copy, Eraser, Maximize2, RefreshCw, RotateCcw, Scissors, Upload, X } from "lucide-react";
 
 const uploadPreviewSize = 320;
-const normalizedUploadImageSize = 640;
+const normalizedUploadImageSize = 1024;
+const batchSplitAnalysisMaxSide = 2200;
 const maxUploadUndoSteps = 6;
 const trimmedInkPaddingRatio = 0.08;
 const minimumRenderedInk = 208;
+const eraserCursor =
+  'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2732%27 height=%2732%27 viewBox=%270 0 32 32%27%3E%3Cg transform=%27rotate(-35 16 16)%27%3E%3Crect x=%278%27 y=%2713%27 width=%2717%27 height=%279%27 rx=%272%27 fill=%27%23fff%27 stroke=%27%23292524%27 stroke-width=%272%27/%3E%3Cpath d=%27M13 13v9%27 stroke=%27%23b91c1c%27 stroke-width=%272%27/%3E%3C/g%3E%3Cpath d=%27M5 26h18%27 stroke=%27%23292524%27 stroke-width=%272%27 stroke-linecap=%27round%27/%3E%3C/svg%3E") 8 24, crosshair';
 const allowedUploadImageExtensions = [
   "jpg",
   "jpeg",
@@ -260,6 +263,11 @@ function tightenInkEdges(inkLayer: Uint8Array, width: number, height: number) {
   return tightenedLayer;
 }
 
+function smoothStep(edge0: number, edge1: number, value: number) {
+  const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
 function refineInkCanvas(ctx: CanvasRenderingContext2D, width: number, height: number) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
@@ -268,8 +276,12 @@ function refineInkCanvas(ctx: CanvasRenderingContext2D, width: number, height: n
     const luminance = getLuminance(pixels[index], pixels[index + 1], pixels[index + 2]);
     const ink = 255 - luminance;
     let enhancedInk = 0;
-    if (ink > 20) {
-      enhancedInk = Math.max(minimumRenderedInk, 255 * Math.pow((ink - 20) / 235, 0.82));
+    if (ink > 8) {
+      const density = Math.max(0, Math.min(1, (ink - 8) / 247));
+      const edgeFeather = smoothStep(0.1, 0.42, density);
+      const tonalInk = 255 * Math.pow(density, 0.86);
+      const coreInk = minimumRenderedInk * edgeFeather;
+      enhancedInk = Math.max(tonalInk, coreInk);
     }
     const value = Math.max(0, Math.min(255, Math.round(255 - enhancedInk)));
     pixels[index] = value;
@@ -626,7 +638,11 @@ function canvasToCenteredGlyphFile(canvas: HTMLCanvasElement, fileName: string) 
       const pixelIndex = index * 4;
       const luminance = getLuminance(imageData.data[pixelIndex], imageData.data[pixelIndex + 1], imageData.data[pixelIndex + 2]);
       const ink = Math.max(0, 255 - luminance);
-      inkLayer[index] = ink > 14 ? Math.max(180, Math.min(255, Math.round(ink * 1.08))) : 0;
+      if (ink > 10) {
+        const density = Math.max(0, Math.min(1, (ink - 10) / 245));
+        const edgeFeather = smoothStep(0.12, 0.44, density);
+        inkLayer[index] = Math.min(255, Math.round(Math.max(ink * 1.05, 180 * edgeFeather)));
+      }
     }
     removeSmallInkComponents(inkLayer, canvas.width, canvas.height, Math.max(3, Math.round(canvas.width * canvas.height * 0.000012)));
 
@@ -1140,7 +1156,7 @@ async function splitImageToGlyphFiles(file: File, direction: BatchSplitDirection
     });
     const sourceWidth = Math.max(1, image.naturalWidth || image.width);
     const sourceHeight = Math.max(1, image.naturalHeight || image.height);
-    const scale = Math.min(1, 1400 / Math.max(sourceWidth, sourceHeight));
+    const scale = Math.min(1, batchSplitAnalysisMaxSide / Math.max(sourceWidth, sourceHeight));
     const width = Math.max(1, Math.round(sourceWidth * scale));
     const height = Math.max(1, Math.round(sourceHeight * scale));
     const canvas = document.createElement("canvas");
@@ -1265,7 +1281,7 @@ export function AdminGlyphUploadForm({
   const [processedUploadFile, setProcessedUploadFile] = useState<File | null>(null);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
-  const [uploadEraserSize, setUploadEraserSize] = useState(28);
+  const [uploadEraserSize, setUploadEraserSize] = useState(44);
   const [isUploadEditing, setIsUploadEditing] = useState(false);
   const [isErasingUploadPreview, setIsErasingUploadPreview] = useState(false);
   const [uploadUndoCount, setUploadUndoCount] = useState(0);
@@ -1279,7 +1295,7 @@ export function AdminGlyphUploadForm({
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isBatchUploading, setIsBatchUploading] = useState(false);
   const [batchEditingId, setBatchEditingId] = useState<string | null>(null);
-  const [batchEditEraserSize, setBatchEditEraserSize] = useState(28);
+  const [batchEditEraserSize, setBatchEditEraserSize] = useState(44);
   const [isErasingBatchEdit, setIsErasingBatchEdit] = useState(false);
   const [batchEditUndoCount, setBatchEditUndoCount] = useState(0);
   const [isBatchEditApplying, setIsBatchEditApplying] = useState(false);
@@ -2323,6 +2339,7 @@ export function AdminGlyphUploadForm({
                 onPointerUp={finishUploadPreviewErase}
                 onPointerCancel={finishUploadPreviewErase}
                 className="max-h-full max-w-full touch-none bg-white shadow-lg"
+                style={{ cursor: eraserCursor }}
                 aria-label="全螢幕編輯單張圖片"
               />
             </div>
@@ -2395,6 +2412,7 @@ export function AdminGlyphUploadForm({
                 onPointerUp={finishBatchEditErase}
                 onPointerCancel={finishBatchEditErase}
                 className="max-h-full max-w-full touch-none bg-white shadow-lg"
+                style={{ cursor: eraserCursor }}
                 aria-label="大版面編輯拆字圖片"
               />
             </div>

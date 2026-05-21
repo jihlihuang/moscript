@@ -29,6 +29,9 @@ type Item = {
   image_url: string;
   source: string | null;
   license: string | null;
+  like_count: number;
+  collection_count: number;
+  liked_by_me: number;
 };
 
 export default async function CollectionPage({ params }: Params) {
@@ -56,12 +59,26 @@ export default async function CollectionPage({ params }: Params) {
       g.work_title,
       g.image_url,
       g.source,
-      g.license
+      g.license,
+      COALESCE(likes.like_count, 0) AS like_count,
+      COALESCE(collections.collection_count, 0) AS collection_count,
+      CASE WHEN my_like.user_id IS NULL THEN 0 ELSE 1 END AS liked_by_me
     FROM collection_items ci
     JOIN glyphs g ON g.id = ci.glyph_id
+    LEFT JOIN (
+      SELECT glyph_id, COUNT(*) AS like_count
+      FROM glyph_likes
+      GROUP BY glyph_id
+    ) likes ON likes.glyph_id = g.id
+    LEFT JOIN (
+      SELECT glyph_id, COUNT(DISTINCT collection_id) AS collection_count
+      FROM collection_items
+      GROUP BY glyph_id
+    ) collections ON collections.glyph_id = g.id
+    LEFT JOIN glyph_likes my_like ON my_like.glyph_id = g.id AND my_like.user_id = ?
     WHERE ci.collection_id = ?
     ORDER BY ci.position ASC
-  `).all(id) as Item[];
+  `).all(user.id, id) as Item[];
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
@@ -96,6 +113,8 @@ export default async function CollectionPage({ params }: Params) {
             collectionId={collection.id}
             initialDirection={collection.display_direction === "vertical" ? "vertical" : "horizontal"}
             items={items}
+            isAuthenticated={true}
+            likeReturnTo={`/collections/${collection.id}`}
           />
 
           <div className="mt-4 grid gap-2 sm:mt-6 sm:gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -105,6 +124,7 @@ export default async function CollectionPage({ params }: Params) {
                 <div>作者：{item.author || "佚名"}</div>
                 <div>書體：{item.script_type || "未標註"}</div>
                 <div>作品：{item.work_title || "未標題"}</div>
+                <div>讚：{item.like_count}｜集字：{item.collection_count}</div>
                 <div className="truncate text-stone-500">來源：{item.source || "未標註"}</div>
                 <div className="truncate text-stone-500">授權：{item.license || "未標註"}</div>
               </div>

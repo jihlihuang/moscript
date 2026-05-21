@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Columns3, Rows3 } from "lucide-react";
 import { GlyphImage } from "@/components/GlyphImage";
+import { GlyphLikeButton } from "@/components/GlyphLikeButton";
 import { useCollectionDirectionPreference } from "@/components/useCollectionDirectionPreference";
 
 type CollectionGlyphItem = {
@@ -13,16 +14,23 @@ type CollectionGlyphItem = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  like_count?: number;
+  collection_count?: number;
+  liked_by_me?: number;
 };
 
 export function CollectionGlyphDisplay({
   collectionId,
   initialDirection,
   items,
+  isAuthenticated = true,
+  likeReturnTo = "/collections",
 }: {
   collectionId: number;
   initialDirection: "horizontal" | "vertical";
   items: CollectionGlyphItem[];
+  isAuthenticated?: boolean;
+  likeReturnTo?: string;
 }) {
   const [direction, setDirection] = useCollectionDirectionPreference(collectionId, initialDirection);
   const glyphSizeClass = "h-[clamp(132px,34vw,220px)] w-[clamp(132px,34vw,220px)] sm:h-[clamp(180px,20vw,240px)] sm:w-[clamp(180px,20vw,240px)]";
@@ -65,12 +73,12 @@ export function CollectionGlyphDisplay({
           <div className="overflow-x-auto overscroll-x-contain">
             <div className="flex w-max min-w-full snap-x snap-mandatory items-center justify-center gap-3 px-1 py-2 sm:gap-4">
               {items.map((item) => (
-                <Link
-                  key={`${item.position}-${item.glyph_id}`}
-                  href={`/practice/${item.glyph_id}`}
-                  className="shrink-0 snap-center rounded-xl transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
-                  title={`練習 ${item.char}`}
-                >
+                <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 snap-center space-y-2">
+                  <Link
+                    href={`/practice/${item.glyph_id}`}
+                    className="block rounded-xl transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
+                    title={`練習 ${item.char}`}
+                  >
                   <GlyphImage
                     size={240}
                     containerClassName={glyphSizeClass}
@@ -83,7 +91,17 @@ export function CollectionGlyphDisplay({
                       workTitle: item.work_title,
                     }}
                   />
-                </Link>
+                  </Link>
+                  <GlyphLikeButton
+                    glyphId={item.glyph_id}
+                    initialLiked={Boolean(item.liked_by_me)}
+                    initialLikeCount={Number(item.like_count ?? 0)}
+                    initialCollectionCount={Number(item.collection_count ?? 0)}
+                    isAuthenticated={isAuthenticated}
+                    returnTo={likeReturnTo}
+                    className="w-full bg-white"
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -94,12 +112,12 @@ export function CollectionGlyphDisplay({
             <div className="mx-auto flex w-fit max-w-full justify-center gap-4 rounded-[1.5rem] bg-white px-4 py-4 shadow-inner sm:px-8 sm:py-8">
               <div className="flex max-h-[min(76vh,720px)] snap-x snap-mandatory flex-col flex-wrap content-start items-center gap-3 [direction:rtl] sm:gap-4">
                 {items.map((item) => (
-                  <Link
-                    key={`${item.position}-${item.glyph_id}`}
-                    href={`/practice/${item.glyph_id}`}
-                    className="shrink-0 snap-center rounded-xl transition [direction:ltr] hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
-                    title={`練習 ${item.char}`}
-                  >
+                  <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 snap-center space-y-2 [direction:ltr]">
+                    <Link
+                      href={`/practice/${item.glyph_id}`}
+                      className="block rounded-xl transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
+                      title={`練習 ${item.char}`}
+                    >
                     <GlyphImage
                       size={240}
                       containerClassName={glyphSizeClass}
@@ -112,7 +130,17 @@ export function CollectionGlyphDisplay({
                         workTitle: item.work_title,
                       }}
                     />
-                  </Link>
+                    </Link>
+                    <GlyphLikeButton
+                      glyphId={item.glyph_id}
+                      initialLiked={Boolean(item.liked_by_me)}
+                      initialLikeCount={Number(item.like_count ?? 0)}
+                      initialCollectionCount={Number(item.collection_count ?? 0)}
+                      isAuthenticated={isAuthenticated}
+                      returnTo={likeReturnTo}
+                      className="w-full bg-white"
+                    />
+                  </div>
                 ))}
               </div>
             </div>

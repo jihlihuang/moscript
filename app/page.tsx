@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, Heart, LogIn, LogOut, RefreshCw, Search, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, RefreshCw, Search, Trash2, UserRound } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
+import { GlyphLikeButton } from "@/components/GlyphLikeButton";
 
 type GlyphDto = GlyphLike & {
   source?: string | null;
@@ -275,21 +276,10 @@ export default function FrontStagePage() {
     });
   }
 
-  async function toggleGlyphLike(glyphId: number) {
-    if (!user) {
-      window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/")}`;
-      return;
-    }
-    const res = await fetch(`/api/glyphs/${glyphId}/like`, { method: "POST" });
-    const json = await res.json();
-    if (!res.ok) {
-      setMessage(json.error ?? "按讚失敗");
-      return;
-    }
-
+  function updateGlyphLike(glyphId: number, stats: { liked: boolean; likeCount: number; collectionCount: number }) {
     const patchGlyph = <T extends GlyphDto>(glyph: T): T =>
       glyph.id === glyphId
-        ? { ...glyph, likedByMe: json.liked, likeCount: json.likeCount, collectionCount: json.collectionCount }
+        ? { ...glyph, likedByMe: stats.liked, likeCount: stats.likeCount, collectionCount: stats.collectionCount }
         : glyph;
     setData((current) => {
       if (!current) return current;
@@ -794,18 +784,16 @@ export default function FrontStagePage() {
                             )}
                           </button>
                           <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-stone-500">
-                            <button
-                              type="button"
-                              onClick={() => void toggleGlyphLike(glyph.id)}
-                              className={`inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-2 font-bold ${
-                                glyph.likedByMe
-                                  ? "border-red-700 bg-red-50 text-red-800"
-                                  : "border-stone-300 bg-white text-stone-600 hover:border-red-700 hover:text-red-800"
-                              }`}
-                            >
-                              <Heart className={`h-4 w-4 ${glyph.likedByMe ? "fill-current" : ""}`} />
-                              {glyph.likeCount ?? 0}
-                            </button>
+                            <GlyphLikeButton
+                              glyphId={glyph.id}
+                              initialLiked={Boolean(glyph.likedByMe)}
+                              initialLikeCount={glyph.likeCount ?? 0}
+                              initialCollectionCount={glyph.collectionCount ?? 0}
+                              isAuthenticated={Boolean(user)}
+                              returnTo="/"
+                              className="w-full"
+                              onChange={(stats) => updateGlyphLike(glyph.id, stats)}
+                            />
                             <div className="inline-flex items-center justify-center rounded-xl border border-stone-200 bg-white px-2 py-2 font-bold text-stone-600">
                               集字 {glyph.collectionCount ?? 0}
                             </div>

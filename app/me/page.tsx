@@ -29,6 +29,9 @@ type CollectionItemPreview = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  like_count: number;
+  collection_count: number;
+  liked_by_me: number;
 };
 
 export default async function PersonalPage() {
@@ -85,12 +88,26 @@ export default async function PersonalPage() {
         g.author,
         g.script_type,
         g.work_title,
-        g.image_url
+        g.image_url,
+        COALESCE(likes.like_count, 0) AS like_count,
+        COALESCE(collections.collection_count, 0) AS collection_count,
+        CASE WHEN my_like.user_id IS NULL THEN 0 ELSE 1 END AS liked_by_me
       FROM collection_items ci
       JOIN glyphs g ON g.id = ci.glyph_id
+      LEFT JOIN (
+        SELECT glyph_id, COUNT(*) AS like_count
+        FROM glyph_likes
+        GROUP BY glyph_id
+      ) likes ON likes.glyph_id = g.id
+      LEFT JOIN (
+        SELECT glyph_id, COUNT(DISTINCT collection_id) AS collection_count
+        FROM collection_items
+        GROUP BY glyph_id
+      ) collections ON collections.glyph_id = g.id
+      LEFT JOIN glyph_likes my_like ON my_like.glyph_id = g.id AND my_like.user_id = ?
       WHERE ci.collection_id IN (${collections.map(() => "?").join(", ")})
       ORDER BY ci.collection_id DESC, ci.position ASC
-    `).all(...collections.map((collection) => collection.id)) as CollectionItemPreview[]
+    `).all(user.id, ...collections.map((collection) => collection.id)) as CollectionItemPreview[]
     : [];
 
   const itemsByCollection = itemRows.reduce<Record<number, CollectionItemPreview[]>>((acc, item) => {
@@ -251,6 +268,8 @@ export default async function PersonalPage() {
                           initialDirection={collection.display_direction === "vertical" ? "vertical" : "horizontal"}
                           items={items}
                           text={collection.text}
+                          isAuthenticated={true}
+                          likeReturnTo="/me"
                         />
                       </div>
                     );

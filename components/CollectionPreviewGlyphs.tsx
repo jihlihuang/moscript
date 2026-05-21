@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Columns3, Rows3 } from "lucide-react";
 import { GlyphImage } from "@/components/GlyphImage";
+import { GlyphLikeButton } from "@/components/GlyphLikeButton";
 import { useCollectionDirectionPreference } from "@/components/useCollectionDirectionPreference";
 
 type PreviewGlyph = {
@@ -13,6 +14,9 @@ type PreviewGlyph = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  like_count?: number;
+  collection_count?: number;
+  liked_by_me?: number;
 };
 
 export function CollectionPreviewGlyphs({
@@ -21,16 +25,21 @@ export function CollectionPreviewGlyphs({
   items,
   text,
   detailHref,
+  isAuthenticated = true,
+  likeReturnTo = "/collections",
 }: {
   collectionId: number;
   initialDirection: "horizontal" | "vertical";
   items: PreviewGlyph[];
   text: string;
   detailHref?: string;
+  isAuthenticated?: boolean;
+  likeReturnTo?: string;
 }) {
   const [direction, setDirection] = useCollectionDirectionPreference(collectionId, initialDirection);
   const horizontalItems = items.slice(0, 8);
   const verticalItems = items.slice(0, 6);
+  const previewGlyphClassName = "h-[clamp(96px,18vw,136px)] w-[clamp(96px,18vw,136px)]";
 
   return (
     <div className="relative z-20 mb-4">
@@ -76,30 +85,43 @@ export function CollectionPreviewGlyphs({
       {items.length > 0 ? (
         direction === "horizontal" ? (
           <div className="rounded-2xl bg-stone-50 p-2 sm:p-3">
-            <div className="grid grid-cols-4 gap-2 min-[420px]:grid-cols-5 sm:grid-cols-4">
+            <div
+              className="grid gap-2"
+              style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(144px, 100%), 1fr))" }}
+            >
               {horizontalItems.map((item) => (
-                <Link
-                  key={`${item.position}-${item.glyph_id}`}
-                  href={detailHref ?? `/practice/${item.glyph_id}`}
-                  className="rounded-xl focus:outline-none focus:ring-2 focus:ring-red-800"
-                  title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                  }}
-                >
-                  <GlyphImage
-                    size={64}
-                    containerClassName="aspect-square h-auto w-full"
-                    glyph={{
-                      id: item.glyph_id,
-                      char: item.char,
-                      imageUrl: item.image_url,
-                      author: item.author,
-                      scriptType: item.script_type,
-                      workTitle: item.work_title,
+                <div key={`${item.position}-${item.glyph_id}`} className="space-y-1">
+                  <Link
+                    href={detailHref ?? `/practice/${item.glyph_id}`}
+                    className="rounded-xl focus:outline-none focus:ring-2 focus:ring-red-800"
+                    title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
                     }}
+                  >
+                    <GlyphImage
+                      size={136}
+                      containerClassName="aspect-square h-auto w-full"
+                      glyph={{
+                        id: item.glyph_id,
+                        char: item.char,
+                        imageUrl: item.image_url,
+                        author: item.author,
+                        scriptType: item.script_type,
+                        workTitle: item.work_title,
+                      }}
+                    />
+                  </Link>
+                  <GlyphLikeButton
+                    glyphId={item.glyph_id}
+                    initialLiked={Boolean(item.liked_by_me)}
+                    initialLikeCount={Number(item.like_count ?? 0)}
+                    initialCollectionCount={Number(item.collection_count ?? 0)}
+                    isAuthenticated={isAuthenticated}
+                    returnTo={likeReturnTo}
+                    className="w-full bg-white px-2 py-1"
                   />
-                </Link>
+                </div>
               ))}
               {items.length > 8 && (
                 <div className="flex aspect-square w-full items-center justify-center rounded-xl border border-stone-200 bg-white text-sm font-bold text-stone-500">
@@ -111,33 +133,43 @@ export function CollectionPreviewGlyphs({
         ) : (
           <div className="rounded-2xl bg-stone-50 p-2">
             <div className="mx-auto flex w-fit max-w-full overflow-x-auto overscroll-x-contain rounded-xl border border-stone-200 bg-white p-2 shadow-inner">
-              <div className="flex snap-x snap-mandatory flex-col items-center gap-1.5 [direction:rtl]">
+              <div className="flex snap-x snap-mandatory flex-col items-center gap-2 [direction:rtl]">
                 {verticalItems.map((item) => (
-                  <Link
-                    key={`${item.position}-${item.glyph_id}`}
-                    href={detailHref ?? `/practice/${item.glyph_id}`}
-                    className="shrink-0 snap-center rounded-xl [direction:ltr] focus:outline-none focus:ring-2 focus:ring-red-800"
-                    title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                    }}
-                  >
-                    <GlyphImage
-                      size={64}
-                      containerClassName="h-16 w-16"
-                      glyph={{
-                        id: item.glyph_id,
-                        char: item.char,
-                        imageUrl: item.image_url,
-                        author: item.author,
-                        scriptType: item.script_type,
-                        workTitle: item.work_title,
+                  <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 snap-center space-y-1 [direction:ltr]">
+                    <Link
+                      href={detailHref ?? `/practice/${item.glyph_id}`}
+                      className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-red-800"
+                      title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
                       }}
+                    >
+                      <GlyphImage
+                        size={136}
+                        containerClassName={previewGlyphClassName}
+                        glyph={{
+                          id: item.glyph_id,
+                          char: item.char,
+                          imageUrl: item.image_url,
+                          author: item.author,
+                          scriptType: item.script_type,
+                          workTitle: item.work_title,
+                        }}
+                      />
+                    </Link>
+                    <GlyphLikeButton
+                      glyphId={item.glyph_id}
+                      initialLiked={Boolean(item.liked_by_me)}
+                      initialLikeCount={Number(item.like_count ?? 0)}
+                      initialCollectionCount={Number(item.collection_count ?? 0)}
+                      isAuthenticated={isAuthenticated}
+                      returnTo={likeReturnTo}
+                      className="w-full bg-white px-2 py-1"
                     />
-                  </Link>
+                  </div>
                 ))}
                 {items.length > 6 && (
-                  <div className="flex h-8 w-16 shrink-0 snap-center items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-xs font-bold text-stone-500 [direction:ltr]">
+                  <div className="flex h-8 w-full shrink-0 snap-center items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-xs font-bold text-stone-500 [direction:ltr]">
                     +{items.length - 6}
                   </div>
                 )}
