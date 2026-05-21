@@ -44,6 +44,8 @@ export function PersonalGlyphManager({
     "all" | "public" | "private"
   >("all");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [isBatchDeleteConfirming, setIsBatchDeleteConfirming] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBatchBusy, setIsBatchBusy] = useState(false);
   const [batchAuthor, setBatchAuthor] = useState("");
@@ -149,14 +151,20 @@ export function PersonalGlyphManager({
       ),
     );
     setSelectedIds([]);
+    toast.success(`已將 ${json.ids.length} 個字圖設為${visibility === "public" ? "公開" : "私人"}`);
   }
 
   async function batchDeleteGlyphs() {
-    if (!window.confirm(`確定要刪除 ${selectedCount} 個個人字圖嗎？`)) return;
+    if (!isBatchDeleteConfirming) {
+      setIsBatchDeleteConfirming(true);
+      return;
+    }
+    setIsBatchDeleteConfirming(false);
     const json = await batchRequest({ action: "delete" });
     if (!json) return;
     setGlyphs((items) => items.filter((item) => !json.ids.includes(item.id)));
     setSelectedIds([]);
+    toast.success(`已刪除 ${json.ids.length} 個字圖`);
   }
 
   async function batchUpdateMetadata() {
@@ -192,6 +200,7 @@ export function PersonalGlyphManager({
     setBatchAuthor("");
     setBatchScriptType("");
     setBatchWorkTitle("");
+    toast.success(`已更新 ${json.ids.length} 個字圖的資料`);
   }
 
   async function loadMoreGlyphs() {
@@ -217,6 +226,18 @@ export function PersonalGlyphManager({
       setIsLoadingMore(false);
     }
   }
+
+  useEffect(() => {
+    if (confirmDeleteId === null) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
+
+  useEffect(() => {
+    if (!isBatchDeleteConfirming) return;
+    const timer = setTimeout(() => setIsBatchDeleteConfirming(false), 3000);
+    return () => clearTimeout(timer);
+  }, [isBatchDeleteConfirming]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -261,13 +282,18 @@ export function PersonalGlyphManager({
   }
 
   async function deleteGlyph(id: number) {
-    if (!window.confirm("確定要刪除這個個人字圖嗎？")) return;
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    setConfirmDeleteId(null);
     setBusyId(id);
     try {
       const res = await fetch(`/api/me/glyphs/${id}`, { method: "DELETE" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "刪除失敗");
       setGlyphs((items) => items.filter((item) => item.id !== id));
+      toast.success("已刪除字圖");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "刪除失敗");
       setBusyId(null);
@@ -276,8 +302,14 @@ export function PersonalGlyphManager({
 
   if (glyphs.length === 0) {
     return (
-      <div className="rounded-sm border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
-        尚未上傳個人字圖。
+      <div className="rounded-xl border border-dashed border-stone-300 py-12 text-center text-sm text-stone-400">
+        <p>尚未上傳個人字圖。</p>
+        <Link
+          href="/upload"
+          className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white hover:bg-stone-900"
+        >
+          上傳字圖
+        </Link>
       </div>
     );
   }
@@ -383,8 +415,21 @@ export function PersonalGlyphManager({
       </div>
 
       {filteredGlyphs.length === 0 ? (
-        <div className="rounded-sm border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
-          查無符合條件的個人字圖。
+        <div className="rounded-xl border border-dashed border-stone-300 py-12 text-center text-sm text-stone-400">
+          <p>查無符合條件的個人字圖。</p>
+          <button
+            type="button"
+            onClick={() => {
+              setQueryChar("");
+              setQueryAuthor("");
+              setQueryWorkTitle("");
+              setSelectedScriptTypes([]);
+              setVisibilityFilter("all");
+            }}
+            className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
+          >
+            清除篩選
+          </button>
         </div>
       ) : (
         <>
@@ -421,9 +466,13 @@ export function PersonalGlyphManager({
                   type="button"
                   onClick={() => void batchDeleteGlyphs()}
                   disabled={selectedCount === 0 || isBatchBusy}
-                  className="rounded-sm border border-red-200 px-3 py-2 text-sm font-bold text-red-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`rounded-sm border px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isBatchDeleteConfirming
+                      ? "border-red-600 bg-red-50 text-red-700 hover:bg-red-100"
+                      : "border-red-200 text-red-700 hover:border-red-700"
+                  }`}
                 >
-                  批次刪除
+                  {isBatchDeleteConfirming ? "確認刪除？" : "批次刪除"}
                 </button>
               </div>
             </div>
@@ -547,16 +596,27 @@ export function PersonalGlyphManager({
                       {glyph.visibility === "public" ? "私人" : "公開"}
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void deleteGlyph(glyph.id)}
-                    disabled={busyId === glyph.id}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-red-200 bg-white text-red-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label="刪除個人字圖"
-                    title="刪除"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {confirmDeleteId === glyph.id ? (
+                    <button
+                      type="button"
+                      onClick={() => void deleteGlyph(glyph.id)}
+                      className="inline-flex min-h-10 items-center justify-center rounded-sm border border-red-600 bg-red-50 px-2 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
+                      title="再按一次確認刪除"
+                    >
+                      確認？
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void deleteGlyph(glyph.id)}
+                      disabled={busyId === glyph.id}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-red-200 bg-white text-red-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="刪除個人字圖"
+                      title="刪除"
+                    >
+                      {busyId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

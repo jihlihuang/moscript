@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, Menu, RefreshCw, Search, Trash2, UserRound, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, Menu, RefreshCw, Search, UserRound, X } from "lucide-react";
+import { toast } from "sonner";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
 import { GlyphLikeButton } from "@/components/GlyphLikeButton";
@@ -582,6 +583,10 @@ export default function FrontStagePage() {
 
   async function saveCollection() {
     if (isSavingCollection) return;
+    if (selected.length === 0) {
+      toast.error("請先從搜尋結果中選取至少一個字圖");
+      return;
+    }
     const payload: CollectionSavePayload = {
       title: collectionTitle.trim() || q,
       text: q,
@@ -642,7 +647,6 @@ export default function FrontStagePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* 登入／登出：永遠顯示 */}
             {user ? (
               <form action="/api/auth/logout?returnTo=/" method="post" onSubmit={handleLogout} className="flex items-center gap-2">
                 <span className="hidden max-w-[180px] truncate text-sm text-stone-500 md:inline">
@@ -666,7 +670,6 @@ export default function FrontStagePage() {
               </Link>
             )}
 
-            {/* 個人頁：桌機直接顯示，手機收入選單 */}
             {user && (
               <Link
                 href="/me"
@@ -677,7 +680,6 @@ export default function FrontStagePage() {
               </Link>
             )}
 
-            {/* 後台管理：桌機直接顯示，手機收入選單 */}
             {isAdminVisible && (
               <Link
                 href="/admin"
@@ -688,7 +690,6 @@ export default function FrontStagePage() {
               </Link>
             )}
 
-            {/* 手機選單：只在登入後且有次要項目時顯示 */}
             {user && (
               <div className="relative sm:hidden">
                 <button
@@ -733,16 +734,17 @@ export default function FrontStagePage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
-        <div className="space-y-4 sm:space-y-6">
-          <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm sm:rounded-3xl sm:p-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
-            <div className="grid gap-3">
+      <div className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6 lg:grid lg:grid-cols-[272px_minmax(0,1fr)_296px] lg:items-start lg:gap-4">
+
+        {/* LEFT: Search + Filters */}
+        <aside className="space-y-3 lg:sticky lg:top-[81px]">
+          <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void searchGlyphs();
               }}
-              className="grid gap-2 sm:gap-3"
+              className="space-y-2"
             >
               <div className="flex gap-2">
                 <label className="relative block flex-1">
@@ -754,6 +756,7 @@ export default function FrontStagePage() {
                       setIsComposingQuery(false);
                       const nextQ = onlyChinese(e.currentTarget.value);
                       setQ(nextQ);
+                      if (selected.length > 0) toast("已清除集字選取");
                       setSelected([]);
                       setActivePosition(null);
                       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -766,15 +769,16 @@ export default function FrontStagePage() {
                           ? e.target.value
                           : onlyChinese(e.target.value);
                       setQ(nextQ);
-                      
+
                       if (!isComposingQuery && !nativeEvent.isComposing) {
+                        if (selected.length > 0) toast("已清除集字選取");
                         setSelected([]);
                         setActivePosition(null);
                         if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
                         searchTimeoutRef.current = setTimeout(() => void searchGlyphs(selectedScriptTypes, false, nextQ), 500);
                       }
                     }}
-                    className="w-full rounded-xl border border-stone-300 bg-stone-50 py-3 pl-10 pr-10 text-base outline-none focus:border-red-700 sm:rounded-2xl sm:pr-12 sm:text-lg"
+                    className="w-full rounded-xl border border-stone-300 bg-stone-50 py-3 pl-10 pr-10 text-base outline-none focus:border-red-700"
                     placeholder="輸入中文，例如：小橋流水人家"
                     inputMode="text"
                     autoComplete="off"
@@ -784,12 +788,13 @@ export default function FrontStagePage() {
                       type="button"
                       onClick={() => {
                         setQ("");
+                        if (selected.length > 0) toast("已清除集字選取");
                         setSelected([]);
                         setActivePosition(null);
                         if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
                         void searchGlyphs(selectedScriptTypes, false, "");
                       }}
-                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-200 hover:text-stone-600 sm:right-3"
+                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-200 hover:text-stone-600"
                       aria-label="清除搜尋"
                       title="清除搜尋"
                     >
@@ -800,7 +805,7 @@ export default function FrontStagePage() {
                 <button
                   type="button"
                   onClick={() => setIsFilterOpen(!isFilterOpen)}
-                  className={`inline-flex items-center justify-center rounded-xl border px-3 sm:hidden ${
+                  className={`inline-flex items-center justify-center rounded-xl border px-3 lg:hidden ${
                     isFilterOpen || author || resultScope !== "library" || resultSort !== "popular" || selectedScriptTypes.length > 0
                       ? "border-red-700 bg-red-50 text-red-800"
                       : "border-stone-300 bg-stone-50 text-stone-600"
@@ -809,8 +814,8 @@ export default function FrontStagePage() {
                   <Filter className="h-5 w-5" />
                 </button>
               </div>
-              
-              <div className={`grid gap-2 sm:gap-3 ${isFilterOpen ? "block" : "hidden sm:grid"}`}>
+
+              <div className={`space-y-2 ${isFilterOpen ? "block" : "hidden lg:block"}`}>
                 <input
                   value={author}
                   onChange={(e) => {
@@ -818,71 +823,75 @@ export default function FrontStagePage() {
                     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
                     searchTimeoutRef.current = setTimeout(() => void searchGlyphs(selectedScriptTypes, false, q), 500);
                   }}
-                  className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
+                  className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2.5 outline-none focus:border-red-700"
                   placeholder="作者"
                 />
                 <input
                   value={collectionTitle}
                   onChange={(e) => setCollectionTitle(e.target.value)}
-                  className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
-                  placeholder="作品標題"
+                  className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2.5 outline-none focus:border-red-700"
+                  placeholder={q ? `作品標題（預設：${q}）` : "作品標題"}
                 />
               </div>
             </form>
-            <div className={`grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600 ${isFilterOpen ? "block" : "hidden sm:grid"}`}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-bold text-stone-700">查詢範圍</span>
-                {resultScopeOptions.map((option) => {
-                  const active = resultScope === option.value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => {
-                        setResultScope(option.value);
-                        if (onlyChinese(q)) {
-                          void searchGlyphs(selectedScriptTypes, true, q, option.value, resultSort);
-                        }
-                      }}
-                      className={`rounded-xl px-3 py-2 text-sm font-bold ${
-                        active
-                          ? "bg-red-800 text-white"
-                          : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-bold text-stone-700">排序</span>
-                {resultSortOptions.map((option) => {
-                  const active = resultSort === option.value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => {
-                        setResultSort(option.value);
-                        if (onlyChinese(q)) {
-                          void searchGlyphs(selectedScriptTypes, true, q, resultScope, option.value);
-                        }
-                      }}
-                      className={`rounded-xl px-3 py-2 text-sm font-bold ${
-                        active
-                          ? "bg-stone-800 text-white"
-                          : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
+          </div>
+
+          <div className={`rounded-2xl border border-stone-200 bg-white p-3 text-sm text-stone-600 space-y-2.5 ${isFilterOpen ? "block" : "hidden lg:block"}`}>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="w-full font-bold text-stone-700">查詢範圍</span>
+              {resultScopeOptions.map((option) => {
+                const active = resultScope === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setResultScope(option.value);
+                      if (onlyChinese(q)) {
+                        void searchGlyphs(selectedScriptTypes, true, q, option.value, resultSort);
+                      }
+                    }}
+                    className={`rounded-xl px-3 py-1.5 text-sm font-bold ${
+                      active
+                        ? "bg-red-800 text-white"
+                        : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
-            <div className={`overflow-x-auto ${isFilterOpen ? "block" : "hidden sm:block"}`}>
-              <div className="inline-flex min-w-full gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-1 lg:flex-wrap">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="w-full font-bold text-stone-700">排序</span>
+              {resultSortOptions.map((option) => {
+                const active = resultSort === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setResultSort(option.value);
+                      if (onlyChinese(q)) {
+                        void searchGlyphs(selectedScriptTypes, true, q, resultScope, option.value);
+                      }
+                    }}
+                    className={`rounded-xl px-3 py-1.5 text-sm font-bold ${
+                      active
+                        ? "bg-stone-800 text-white"
+                        : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {scriptFilters.length > 0 && (
+            <div className={`rounded-2xl border border-stone-200 bg-white p-2 ${isFilterOpen ? "block" : "hidden lg:block"}`}>
+              <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -891,13 +900,13 @@ export default function FrontStagePage() {
                   }}
                   disabled={loading && selectedScriptTypes.length === 0}
                   aria-pressed={selectedScriptTypes.length === 0}
-                  className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
+                  className={`whitespace-nowrap rounded-xl px-3 py-1.5 text-sm font-bold transition ${
                     selectedScriptTypes.length === 0
                       ? "bg-red-800 text-white"
-                      : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
+                      : "text-stone-500 hover:bg-stone-100 hover:text-stone-800"
                   }`}
                 >
-                  全部書體
+                  全部
                 </button>
                 {scriptFilters.map((script) => {
                   const active = selectedScriptTypes.includes(script);
@@ -908,10 +917,10 @@ export default function FrontStagePage() {
                       onClick={() => toggleScriptFilter(script)}
                       disabled={loading && active}
                       aria-pressed={active}
-                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
+                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-xl px-3 py-1.5 text-sm font-bold transition ${
                         active
                           ? "bg-red-800 text-white"
-                          : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
+                          : "text-stone-500 hover:bg-stone-100 hover:text-stone-800"
                       }`}
                     >
                       {active ? <Check className="h-3.5 w-3.5" /> : null}
@@ -921,48 +930,69 @@ export default function FrontStagePage() {
                 })}
               </div>
             </div>
-            </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3 lg:min-h-full">
-              <div className="mb-3 flex items-start justify-between gap-3 sm:items-center">
-                <div className="flex min-w-0 items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-red-600" />
-                  <div className="min-w-0">
-                    <h2 className="font-bold font-serif">目前集字</h2>
-                    <p className="text-xs text-stone-500 sm:text-sm">
-                      {editingCollectionId
-                        ? `正在編輯：${collectionTitle.trim() || q || "未命名集字作品"}`
-                        : "點選單字可聚焦搜尋結果"}
-                    </p>
-                  </div>
+          )}
+        </aside>
+
+        {/* CENTER: Mobile strip + Results */}
+        <section className="mt-3 min-w-0 space-y-3 lg:mt-0">
+
+          {/* Mobile character strip */}
+          {queryChars.length > 0 && (
+            <div className="lg:hidden rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <div className="flex flex-1 gap-1.5 overflow-x-auto pb-1">
+                  {queryChars.map((char, index) => {
+                    const glyph = selected.find((item) => item.position === index);
+                    const active = activePosition === index;
+                    return (
+                      <div key={`${char}-strip-${index}`} className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleActivePosition(index)}
+                          className={`block rounded-xl border p-0.5 transition ${
+                            active ? "border-red-700 bg-red-700/10" : "border-transparent hover:border-stone-300"
+                          }`}
+                        >
+                          {glyph ? (
+                            <GlyphImage glyph={glyph} size={64} containerClassName="h-16 w-16" />
+                          ) : (
+                            <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-zinc-200 bg-stone-50 font-serif text-2xl text-zinc-600">
+                              {char}
+                            </div>
+                          )}
+                        </button>
+                        {glyph && (
+                          <button
+                            type="button"
+                            onClick={() => removeSelected(index)}
+                            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                  {activePosition !== null && (
-                    <button
-                      type="button"
-                      onClick={() => setActivePosition(null)}
-                      className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-600 hover:border-red-700 hover:text-stone-900 sm:text-sm"
-                    >
-                      顯示全部
-                    </button>
-                  )}
+                <div className="flex shrink-0 flex-col gap-1.5">
                   {editingCollectionId ? (
                     <>
                       <button
                         type="button"
                         onClick={updateLoadedCollection}
                         disabled={isSavingCollection}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                        <span>{isSavingCollection ? "更新中" : "更新作品"}</span>
+                        {isSavingCollection ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        更新
                       </button>
                       <button
                         type="button"
                         onClick={saveCollection}
                         disabled={isSavingCollection}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        另存新作品
+                        另存
                       </button>
                     </>
                   ) : (
@@ -970,119 +1000,58 @@ export default function FrontStagePage() {
                       type="button"
                       onClick={saveCollection}
                       disabled={isSavingCollection}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                      <span className="sm:hidden">{isSavingCollection ? "儲存中" : "儲存集字"}</span>
-                      <span className="hidden sm:inline">{isSavingCollection ? "儲存中" : "儲存集字作品"}</span>
+                      {isSavingCollection ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      {isSavingCollection ? "儲存中" : "儲存集字"}
                     </button>
                   )}
                 </div>
               </div>
-
-              {queryChars.length === 0 ? (
-                <p className="text-sm text-stone-500">請輸入文字。</p>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 min-[420px]:grid-cols-4 sm:flex sm:flex-wrap">
-                  {queryChars.map((char, index) => {
-                    const glyph = selected.find((item) => item.position === index);
-                    const active = activePosition === index;
-                    return (
-                      <div key={`${char}-selected-${index}`} className="group relative w-full sm:w-auto">
-                        <button
-                          type="button"
-                          onClick={() => toggleActivePosition(index)}
-                          aria-pressed={active}
-                          className={`block w-full rounded-xl border p-1 transition sm:w-auto ${
-                            active
-                              ? "border-red-700 bg-red-700/10"
-                              : "border-transparent hover:border-stone-400"
-                          }`}
-                        >
-                          {glyph ? (
-                            <GlyphImage glyph={glyph} size={110} containerClassName="h-[82px] w-full sm:h-[110px] sm:w-[110px]" />
-                          ) : (
-                            <div className="flex h-[82px] w-full items-center justify-center rounded-xl border border-zinc-200 bg-white font-serif text-4xl text-zinc-600 sm:h-[110px] sm:w-[110px] sm:text-5xl">
-                              {char}
-                            </div>
-                          )}
-                        </button>
-                        {glyph && (
-                          <button
-                            onClick={() => removeSelected(index)}
-                            className="absolute -right-2 -top-2 hidden rounded-full bg-red-500 p-1 group-hover:block"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        )}
-                        {glyph && (
-                          <Link
-                            href={`/practice/${glyph.id}`}
-                            className="absolute bottom-1 left-1 rounded-lg bg-white/90 px-2 py-1 text-xs font-bold text-stone-700 shadow-sm hover:text-red-800"
-                          >
-                            練習
-                          </Link>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
               {message && (
                 saveResult ? (
                   <div
-                    className={`mt-3 rounded-2xl border p-4 shadow-sm ${
+                    className={`mt-3 rounded-2xl border p-3 ${
                       saveResult.type === "duplicate"
                         ? "border-amber-300 bg-amber-50 text-amber-950"
                         : "border-emerald-300 bg-emerald-50 text-emerald-950"
                     }`}
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-start gap-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
                         <div
-                          className={`mt-0.5 rounded-full p-2 ${
-                            saveResult.type === "duplicate"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-emerald-100 text-emerald-700"
+                          className={`rounded-full p-1.5 ${
+                            saveResult.type === "duplicate" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
                           }`}
                         >
-                          {saveResult.type === "duplicate" ? (
-                            <AlertTriangle className="h-5 w-5" />
-                          ) : (
-                            <CheckCircle2 className="h-5 w-5" />
-                          )}
+                          {saveResult.type === "duplicate" ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
                         </div>
-                        <div>
-                          <div className="font-bold">{saveResult.title}</div>
-                          <p className="mt-1 text-sm opacity-80">{saveResult.description}</p>
-                        </div>
+                        <div className="text-sm font-bold">{saveResult.title}</div>
                       </div>
                       <Link
                         href={saveResult.url}
-                        className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white ${
-                          saveResult.type === "duplicate"
-                            ? "bg-amber-700 hover:bg-amber-800"
-                            : "bg-emerald-700 hover:bg-emerald-800"
+                        className={`shrink-0 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-bold text-white ${
+                          saveResult.type === "duplicate" ? "bg-amber-700 hover:bg-amber-800" : "bg-emerald-700 hover:bg-emerald-800"
                         }`}
                       >
-                        查看作品
-                        <ExternalLink className="h-4 w-4" />
+                        查看
+                        <ExternalLink className="h-3.5 w-3.5" />
                       </Link>
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-3 rounded-2xl border border-stone-200 bg-white p-3 text-sm text-stone-600">
+                  <div className="mt-2 rounded-xl border border-stone-200 bg-stone-50 p-2 text-xs text-stone-600">
                     {message}
                   </div>
                 )
               )}
             </div>
-          </section>
+          )}
 
-          <section className="relative min-h-[320px] rounded-2xl border border-stone-200 bg-white p-3 sm:min-h-[400px] sm:rounded-3xl sm:p-4">
+          {/* Search results */}
+          <div className="relative min-h-[320px] rounded-2xl border border-stone-200 bg-white p-3 sm:min-h-[400px]">
             {loading && (
-              <div className="absolute left-0 right-0 top-0 h-1 overflow-hidden rounded-t-2xl sm:rounded-t-3xl">
+              <div className="absolute left-0 right-0 top-0 h-1 overflow-hidden rounded-t-2xl">
                 <div className="h-full w-full origin-left animate-[progress_1s_ease-in-out_infinite] bg-red-700/80" />
               </div>
             )}
@@ -1092,7 +1061,7 @@ export default function FrontStagePage() {
                 100% { transform: translateX(100%); }
               }
             `}} />
-            <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-stone-600 sm:text-base">
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-stone-600">
               <Filter className="h-5 w-5" />
               <span>搜尋結果</span>
               {data && (
@@ -1122,7 +1091,7 @@ export default function FrontStagePage() {
                   <Search className="h-8 w-8 text-stone-400" />
                 </div>
                 <h3 className="mb-2 text-lg font-bold text-stone-700">開始探索書法之美</h3>
-                <p className="text-sm sm:text-base">在上方輸入文字並按下搜尋，系統會依每個字顯示可用的書法字圖。</p>
+                <p className="text-sm sm:text-base">在左側輸入文字，系統會依每個字顯示可用的書法字圖。</p>
                 <div className="mt-6 flex flex-wrap justify-center gap-2">
                   <button
                     type="button"
@@ -1173,102 +1142,262 @@ export default function FrontStagePage() {
                     </div>
                   ) : (
                     <>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-6">
-                      {glyphs.map((glyph) => {
-                        const selectedAtPosition = selected.some((item) => item.position === index && item.id === glyph.id);
-                        const selectedElsewhere = !selectedAtPosition && selected.some((item) => item.id === glyph.id);
-                        return (
-                        <div
-                          key={glyph.id}
-                          className={`relative rounded-2xl border p-2 text-left hover:border-red-700 sm:p-3 ${
-                            selectedAtPosition
-                              ? "border-red-700 bg-red-50 shadow-[0_0_0_3px_rgba(185,28,28,0.12)]"
-                              : selectedElsewhere
-                              ? "border-amber-300 bg-amber-50"
-                              : "border-stone-200 bg-stone-50"
-                          }`}
-                        >
-                          {(selectedAtPosition || selectedElsewhere) && (
-                            <div className={`absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-xs font-bold ${
-                              selectedAtPosition ? "bg-red-800 text-white" : "bg-amber-600 text-white"
-                            }`}>
-                              {selectedAtPosition ? "已選" : "已在集字"}
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => pickGlyph(glyph, index)}
-                            className="block w-full text-left"
-                          >
-                            <GlyphImage glyph={glyph} size={110} containerClassName="h-[96px] w-full sm:h-[110px] sm:w-full" />
-                            <div className="mt-2 text-sm font-medium text-stone-700">{glyph.author || "佚名"}</div>
-                            <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
-                            {glyph.ownerUserId && (
-                              <div className="mt-1 text-xs font-bold text-red-700">
-                                {glyph.visibility === "private" ? "私人字圖" : "個人公開"}
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4">
+                        {glyphs.map((glyph) => {
+                          const selectedAtPosition = selected.some((item) => item.position === index && item.id === glyph.id);
+                          const selectedElsewhere = !selectedAtPosition && selected.some((item) => item.id === glyph.id);
+                          return (
+                            <div
+                              key={glyph.id}
+                              className={`relative rounded-2xl border p-2 text-left hover:border-red-700 sm:p-3 ${
+                                selectedAtPosition
+                                  ? "border-red-700 bg-red-50 shadow-[0_0_0_3px_rgba(185,28,28,0.12)]"
+                                  : selectedElsewhere
+                                  ? "border-amber-300 bg-amber-50"
+                                  : "border-stone-200 bg-stone-50"
+                              }`}
+                            >
+                              {(selectedAtPosition || selectedElsewhere) && (
+                                <div className={`absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-xs font-bold ${
+                                  selectedAtPosition ? "bg-red-800 text-white" : "bg-amber-600 text-white"
+                                }`}>
+                                  {selectedAtPosition ? "已選" : "已在集字"}
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => pickGlyph(glyph, index)}
+                                className="block w-full text-left"
+                              >
+                                <GlyphImage glyph={glyph} size={110} containerClassName="h-[96px] w-full sm:h-[110px] sm:w-full" />
+                                <div className="mt-2 text-sm font-medium text-stone-700">{glyph.author || "佚名"}</div>
+                                <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
+                                {glyph.ownerUserId && (
+                                  <div className="mt-1 text-xs font-bold text-red-700">
+                                    {glyph.visibility === "private" ? "私人字圖" : "個人公開"}
+                                  </div>
+                                )}
+                              </button>
+                              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-stone-500">
+                                <GlyphLikeButton
+                                  glyphId={glyph.id}
+                                  initialLiked={Boolean(glyph.likedByMe)}
+                                  initialLikeCount={glyph.likeCount ?? 0}
+                                  initialCollectionCount={glyph.collectionCount ?? 0}
+                                  isAuthenticated={Boolean(user)}
+                                  returnTo="/"
+                                  className="w-full"
+                                  onChange={(stats) => updateGlyphLike(glyph.id, stats)}
+                                />
+                                <div className="inline-flex items-center justify-center rounded-xl border border-stone-200 bg-white px-2 py-2 font-bold text-stone-600">
+                                  集字 {glyph.collectionCount ?? 0}
+                                </div>
                               </div>
-                            )}
-                          </button>
-                          <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-stone-500">
-                            <GlyphLikeButton
-                              glyphId={glyph.id}
-                              initialLiked={Boolean(glyph.likedByMe)}
-                              initialLikeCount={glyph.likeCount ?? 0}
-                              initialCollectionCount={glyph.collectionCount ?? 0}
-                              isAuthenticated={Boolean(user)}
-                              returnTo="/"
-                              className="w-full"
-                              onChange={(stats) => updateGlyphLike(glyph.id, stats)}
-                            />
-                            <div className="inline-flex items-center justify-center rounded-xl border border-stone-200 bg-white px-2 py-2 font-bold text-stone-600">
-                              集字 {glyph.collectionCount ?? 0}
+                              <Link
+                                href={`/practice/${glyph.id}`}
+                                className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
+                              >
+                                練習
+                              </Link>
+                              <Link
+                                href={`/glyph/${glyph.id}`}
+                                className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-red-800"
+                              >
+                                字圖詳情
+                              </Link>
                             </div>
+                          );
+                        })}
+                      </div>
+                      {data.hasMoreByChar?.[char] && (
+                        <>
+                          <div
+                            ref={(node) => {
+                              loadMoreSentinelRefs.current[char] = node;
+                            }}
+                            data-char={char}
+                            className="h-1"
+                          />
+                          <div className="mt-3 flex justify-center">
+                            <button
+                              type="button"
+                              onClick={() => void loadMoreForChar(char)}
+                              disabled={Boolean(loadingMoreChars[char])}
+                              className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {loadingMoreChars[char] ? "載入中..." : `載入更多「${char}」`}
+                            </button>
                           </div>
-                          <Link
-                            href={`/practice/${glyph.id}`}
-                            className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
-                          >
-                            練習
-                          </Link>
-                          <Link
-                            href={`/glyph/${glyph.id}`}
-                            className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-red-800"
-                          >
-                            字圖詳情
-                          </Link>
-                        </div>
-                      );
-                      })}
-                    </div>
-                    {data.hasMoreByChar?.[char] && (
-                      <>
-                        <div
-                          ref={(node) => {
-                            loadMoreSentinelRefs.current[char] = node;
-                          }}
-                          data-char={char}
-                          className="h-1"
-                        />
-                        <div className="mt-3 flex justify-center">
-                          <button
-                            type="button"
-                            onClick={() => void loadMoreForChar(char)}
-                            disabled={Boolean(loadingMoreChars[char])}
-                            className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {loadingMoreChars[char] ? "載入中..." : `載入更多「${char}」`}
-                          </button>
-                        </div>
-                      </>
-                    )}
+                        </>
+                      )}
                     </>
                   )}
                 </div>
               );
             })}
-          </section>
-        </div>
-      </section>
+          </div>
+        </section>
+
+        {/* RIGHT: Collection workspace */}
+        <aside className="hidden lg:block lg:sticky lg:top-[81px]">
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <BookOpen className="h-5 w-5 shrink-0 text-red-600" />
+                <div className="min-w-0">
+                  <h2 className="font-bold font-serif">目前集字</h2>
+                  <p className="truncate text-xs text-stone-500">
+                    {editingCollectionId
+                      ? `編輯：${collectionTitle.trim() || q || "未命名"}`
+                      : "點選單字聚焦搜尋結果"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                {activePosition !== null && (
+                  <button
+                    type="button"
+                    onClick={() => setActivePosition(null)}
+                    className="rounded-xl border border-stone-300 px-2 py-1.5 text-xs font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
+                  >
+                    顯示全部
+                  </button>
+                )}
+                {editingCollectionId ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={updateLoadedCollection}
+                      disabled={isSavingCollection}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isSavingCollection ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      更新作品
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveCollection}
+                      disabled={isSavingCollection}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      另存新作品
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={saveCollection}
+                    disabled={isSavingCollection}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSavingCollection ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    儲存集字作品
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {queryChars.length === 0 ? (
+              <p className="text-sm text-stone-500">請輸入文字。</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {queryChars.map((char, index) => {
+                  const glyph = selected.find((item) => item.position === index);
+                  const active = activePosition === index;
+                  return (
+                    <div key={`${char}-ws-${index}`} className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => toggleActivePosition(index)}
+                        aria-pressed={active}
+                        className={`block w-full rounded-xl border p-1 transition ${
+                          active
+                            ? "border-red-700 bg-red-700/10"
+                            : "border-transparent hover:border-stone-400"
+                        }`}
+                      >
+                        {glyph ? (
+                          <GlyphImage glyph={glyph} size={96} containerClassName="h-[80px] w-full" />
+                        ) : (
+                          <div className="flex h-[80px] w-full items-center justify-center rounded-xl border border-zinc-200 bg-white font-serif text-4xl text-zinc-600">
+                            {char}
+                          </div>
+                        )}
+                      </button>
+                      {glyph && (
+                        <button
+                          type="button"
+                          onClick={() => removeSelected(index)}
+                          className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white group-hover:flex"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                      {glyph && (
+                        <Link
+                          href={`/practice/${glyph.id}`}
+                          className="absolute bottom-1 left-1 rounded-lg bg-white/90 px-2 py-1 text-xs font-bold text-stone-700 shadow-sm hover:text-red-800"
+                        >
+                          練習
+                        </Link>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {message && (
+              saveResult ? (
+                <div
+                  className={`mt-3 rounded-2xl border p-3 ${
+                    saveResult.type === "duplicate"
+                      ? "border-amber-300 bg-amber-50 text-amber-950"
+                      : "border-emerald-300 bg-emerald-50 text-emerald-950"
+                  }`}
+                >
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-start gap-2">
+                      <div
+                        className={`mt-0.5 rounded-full p-1.5 ${
+                          saveResult.type === "duplicate"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-emerald-100 text-emerald-700"
+                        }`}
+                      >
+                        {saveResult.type === "duplicate" ? (
+                          <AlertTriangle className="h-4 w-4" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold">{saveResult.title}</div>
+                        <p className="mt-0.5 text-xs opacity-80">{saveResult.description}</p>
+                      </div>
+                    </div>
+                    <Link
+                      href={saveResult.url}
+                      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-white ${
+                        saveResult.type === "duplicate"
+                          ? "bg-amber-700 hover:bg-amber-800"
+                          : "bg-emerald-700 hover:bg-emerald-800"
+                      }`}
+                    >
+                      查看作品
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-2xl border border-stone-200 bg-white p-3 text-sm text-stone-600">
+                  {message}
+                </div>
+              )
+            )}
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

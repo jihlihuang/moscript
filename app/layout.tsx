@@ -13,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-Hant">
       <body className="bg-stone-50 text-stone-900 antialiased">
         {children}
-        <Toaster position="bottom-right" />
+        <Toaster position="top-right" richColors />
         <BackToTopButton />
       </body>
     </html>

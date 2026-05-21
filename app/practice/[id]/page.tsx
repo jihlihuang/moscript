@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { LogoMark } from "@/components/LogoMark";
 import { GlyphPracticeCanvas } from "@/components/GlyphPracticeCanvas";
+import { PracticeKeyboardNav } from "@/components/PracticeKeyboardNav";
 import { type GlyphLike } from "@/components/GlyphImage";
 import { GlyphLikeButton } from "@/components/GlyphLikeButton";
 import { canAccessGlyph, glyphImageUrlForAccess } from "@/lib/glyph-access";
@@ -166,6 +167,10 @@ export default async function PracticePage({ params, searchParams }: Params) {
       <section className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
         <GlyphPracticeCanvas glyph={glyph} />
       </section>
+      <PracticeKeyboardNav
+        prevHref={previousItem ? practiceHref(previousItem) : undefined}
+        nextHref={nextItem ? practiceHref(nextItem) : undefined}
+      />
     </main>
   );
 }
