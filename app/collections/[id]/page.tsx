@@ -4,10 +4,12 @@ import { ArrowLeft, Search } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
+import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { LogoMark } from "@/components/LogoMark";
 import { CollectionGlyphDisplay } from "@/components/CollectionGlyphDisplay";
 import { glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
+import { headers } from "next/headers";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -93,6 +95,11 @@ export default async function CollectionPage({ params }: Params) {
     }, "thumbnail"),
   }));
 
+  const headersList = await headers();
+  const host = headersList.get("host") || "";
+  const protocol = headersList.get("x-forwarded-proto") || "http";
+  const fullUrl = `${protocol}://${host}/collections/${collection.id}`;
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white">
@@ -107,6 +114,7 @@ export default async function CollectionPage({ params }: Params) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
+            <CopyLinkButton url={fullUrl} />
             <Link href={`/?collectionId=${collection.id}`} className="col-span-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-stone-900 sm:col-span-1">
               <Search className="h-4 w-4" />
               載入到首頁

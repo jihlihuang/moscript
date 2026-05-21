@@ -10,32 +10,34 @@ export function PersonalPageTabs({
   collectionsContent: React.ReactNode;
   glyphsContent: React.ReactNode;
 }) {
-  const [activeTab, setActiveTab] = useState<"collections" | "glyphs">("collections");
+  const [activeTab, setActiveTab] = useState<"collections" | "glyphs">(
+    "collections",
+  );
 
   return (
-    <div className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex flex-wrap gap-2 border-b border-stone-200 pb-4">
+    <div className="rounded-sm border border-stone-300 bg-[#faf8f5] p-6 shadow-md mt-6">
+      <div className="mb-6 flex flex-wrap gap-4 border-b border-stone-300 pb-4">
         <button
           onClick={() => setActiveTab("collections")}
-          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+          className={`inline-flex items-center gap-2 px-4 py-2 font-serif text-base font-bold tracking-widest transition-colors ${
             activeTab === "collections"
-              ? "bg-red-800 text-white"
-              : "bg-stone-50 text-stone-600 hover:bg-stone-200"
+              ? "border-b-2 border-red-800 text-red-900"
+              : "border-b-2 border-transparent text-stone-500 hover:text-stone-800"
           }`}
         >
-          <BookOpen className="h-4 w-4" />
-          最近集字作品
+          <BookOpen className="h-5 w-5" />
+          集字卷軸
         </button>
         <button
           onClick={() => setActiveTab("glyphs")}
-          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+          className={`inline-flex items-center gap-2 px-4 py-2 font-serif text-base font-bold tracking-widest transition-colors ${
             activeTab === "glyphs"
-              ? "bg-red-800 text-white"
-              : "bg-stone-50 text-stone-600 hover:bg-stone-200"
+              ? "border-b-2 border-red-800 text-red-900"
+              : "border-b-2 border-transparent text-stone-500 hover:text-stone-800"
           }`}
         >
-          <ImageIcon className="h-4 w-4" />
-          個人字圖管理
+          <ImageIcon className="h-5 w-5" />
+          字圖珍藏
         </button>
       </div>
       <div>

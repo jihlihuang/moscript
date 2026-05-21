@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Heart } from "lucide-react";
+import { toast } from "sonner";
 
 type GlyphLikeStats = {
   liked: boolean;
@@ -77,7 +78,7 @@ export function GlyphLikeButton({
       onChange?.(nextStats);
       dispatchGlyphLikeUpdate(glyphId, nextStats);
     } catch (error) {
-      alert(error instanceof Error ? error.message : "按讚失敗");
+      toast.error(error instanceof Error ? error.message : "按讚失敗");
     } finally {
       setIsBusy(false);
     }

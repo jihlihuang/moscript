@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 type Props = {
   id: number;
@@ -29,16 +30,15 @@ export function DeleteCollectionButton({ id, redirectOnSuccess = false, redirect
       if (res.ok) {
         if (redirectOnSuccess) {
           router.push(redirectTo);
-          router.refresh();
         } else {
           router.refresh();
         }
       } else {
-        alert("刪除失敗");
+        toast.error("刪除失敗");
         setIsDeleting(false);
       }
     } catch (err) {
-      alert("發生錯誤");
+      toast.error("發生錯誤");
       setIsDeleting(false);
     }
   };
@@ -47,10 +47,12 @@ export function DeleteCollectionButton({ id, redirectOnSuccess = false, redirect
     <button
       onClick={handleDelete}
       disabled={isDeleting}
-      className="inline-flex items-center gap-1.5 rounded-lg p-2 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 focus:outline-none disabled:opacity-50 transition"
+      className={`inline-flex items-center gap-1.5 rounded-lg p-2 focus:outline-none transition ${
+        isDeleting ? "text-red-500 opacity-50 cursor-not-allowed" : "text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
+      }`}
       title="刪除"
     >
-      <Trash2 className="h-5 w-5" />
+      {isDeleting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Trash2 className="h-5 w-5" />}
     </button>
   );
 }

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Toaster } from "sonner";
+import { BackToTopButton } from "@/components/BackToTopButton";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,7 +11,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-Hant">
-      <body className="bg-stone-50 text-stone-900 antialiased">{children}</body>
+      <body className="bg-stone-50 text-stone-900 antialiased">
+        {children}
+        <Toaster position="bottom-right" />
+        <BackToTopButton />
+      </body>
     </html>
   );
 }

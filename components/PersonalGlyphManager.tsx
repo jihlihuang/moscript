@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Check, RefreshCw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { GlyphImage } from "@/components/GlyphImage";
 
 export type PersonalGlyph = {
@@ -39,49 +40,67 @@ export function PersonalGlyphManager({
   const [queryAuthor, setQueryAuthor] = useState("");
   const [selectedScriptTypes, setSelectedScriptTypes] = useState<string[]>([]);
   const [queryWorkTitle, setQueryWorkTitle] = useState("");
-  const [visibilityFilter, setVisibilityFilter] = useState<"all" | "public" | "private">("all");
+  const [visibilityFilter, setVisibilityFilter] = useState<
+    "all" | "public" | "private"
+  >("all");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBatchBusy, setIsBatchBusy] = useState(false);
   const [batchAuthor, setBatchAuthor] = useState("");
   const [batchScriptType, setBatchScriptType] = useState("");
   const [batchWorkTitle, setBatchWorkTitle] = useState("");
-  const [density, setDensity] = useState<"comfortable" | "compact">("comfortable");
+  const [density, setDensity] = useState<"comfortable" | "compact">(
+    "comfortable",
+  );
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const scriptTypeOptions = useMemo(
     () =>
-      Array.from(new Set(glyphs.map((glyph) => getScriptLabel(glyph.scriptType)))).sort((a, b) =>
-        a.localeCompare(b, "zh-Hant")
-      ),
-    [glyphs]
+      Array.from(
+        new Set(glyphs.map((glyph) => getScriptLabel(glyph.scriptType))),
+      ).sort((a, b) => a.localeCompare(b, "zh-Hant")),
+    [glyphs],
   );
-  
+
   const filteredGlyphs = glyphs.filter((glyph) => {
-    const charMatch = !queryChar.trim() || glyph.char.includes(queryChar.trim());
-    const authorMatch = !queryAuthor.trim() || (glyph.author && glyph.author.includes(queryAuthor.trim()));
-    const scriptMatch = selectedScriptTypes.length === 0 || selectedScriptTypes.includes(getScriptLabel(glyph.scriptType));
-    const workMatch = !queryWorkTitle.trim() || (glyph.workTitle && glyph.workTitle.includes(queryWorkTitle.trim()));
-    const matchesVisibility = visibilityFilter === "all" || glyph.visibility === visibilityFilter;
-    
-    return charMatch && authorMatch && scriptMatch && workMatch && matchesVisibility;
+    const charMatch =
+      !queryChar.trim() || glyph.char.includes(queryChar.trim());
+    const authorMatch =
+      !queryAuthor.trim() ||
+      (glyph.author && glyph.author.includes(queryAuthor.trim()));
+    const scriptMatch =
+      selectedScriptTypes.length === 0 ||
+      selectedScriptTypes.includes(getScriptLabel(glyph.scriptType));
+    const workMatch =
+      !queryWorkTitle.trim() ||
+      (glyph.workTitle && glyph.workTitle.includes(queryWorkTitle.trim()));
+    const matchesVisibility =
+      visibilityFilter === "all" || glyph.visibility === visibilityFilter;
+
+    return (
+      charMatch && authorMatch && scriptMatch && workMatch && matchesVisibility
+    );
   });
 
   function toggleScriptType(scriptType: string) {
     setSelectedScriptTypes((current) =>
       current.includes(scriptType)
         ? current.filter((item) => item !== scriptType)
-        : [...current, scriptType]
+        : [...current, scriptType],
     );
   }
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedCount = selectedIds.length;
-  const allFilteredSelected = filteredGlyphs.length > 0 && filteredGlyphs.every((glyph) => selectedSet.has(glyph.id));
+  const allFilteredSelected =
+    filteredGlyphs.length > 0 &&
+    filteredGlyphs.every((glyph) => selectedSet.has(glyph.id));
 
   function toggleGlyphSelection(id: number) {
     setSelectedIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
     );
   }
 
@@ -114,7 +133,7 @@ export function PersonalGlyphManager({
         workTitle?: string | null;
       };
     } catch (error) {
-      alert(error instanceof Error ? error.message : "批次操作失敗");
+      toast.error(error instanceof Error ? error.message : "批次操作失敗");
       return null;
     } finally {
       setIsBatchBusy(false);
@@ -124,7 +143,11 @@ export function PersonalGlyphManager({
   async function batchUpdateVisibility(visibility: "public" | "private") {
     const json = await batchRequest({ action: "visibility", visibility });
     if (!json) return;
-    setGlyphs((items) => items.map((item) => (json.ids.includes(item.id) ? { ...item, visibility } : item)));
+    setGlyphs((items) =>
+      items.map((item) =>
+        json.ids.includes(item.id) ? { ...item, visibility } : item,
+      ),
+    );
     setSelectedIds([]);
   }
 
@@ -139,10 +162,12 @@ export function PersonalGlyphManager({
   async function batchUpdateMetadata() {
     const body: Record<string, unknown> = { action: "metadata" };
     if (batchAuthor.trim()) body.author = batchAuthor;
-    if (batchScriptType.trim()) body.scriptType = batchScriptType === unknownScriptLabel ? "" : batchScriptType;
+    if (batchScriptType.trim())
+      body.scriptType =
+        batchScriptType === unknownScriptLabel ? "" : batchScriptType;
     if (batchWorkTitle.trim()) body.workTitle = batchWorkTitle;
     if (Object.keys(body).length === 1) {
-      alert("請至少填寫作者、書體或作品名其中一項");
+      toast.error("請至少填寫作者、書體或作品名其中一項");
       return;
     }
     const json = await batchRequest(body);
@@ -153,11 +178,15 @@ export function PersonalGlyphManager({
           ? {
               ...item,
               author: json.author !== undefined ? json.author : item.author,
-              scriptType: json.scriptType !== undefined ? json.scriptType : item.scriptType,
-              workTitle: json.workTitle !== undefined ? json.workTitle : item.workTitle,
+              scriptType:
+                json.scriptType !== undefined
+                  ? json.scriptType
+                  : item.scriptType,
+              workTitle:
+                json.workTitle !== undefined ? json.workTitle : item.workTitle,
             }
-          : item
-      )
+          : item,
+      ),
     );
     setSelectedIds([]);
     setBatchAuthor("");
@@ -174,12 +203,16 @@ export function PersonalGlyphManager({
         limit: "24",
       });
       const res = await fetch(`/api/me/glyphs?${params.toString()}`);
-      const json = (await res.json()) as { glyphs?: PersonalGlyph[]; hasMore?: boolean; error?: string };
+      const json = (await res.json()) as {
+        glyphs?: PersonalGlyph[];
+        hasMore?: boolean;
+        error?: string;
+      };
       if (!res.ok) throw new Error(json.error ?? "讀取更多字圖失敗");
       setGlyphs((items) => [...items, ...(json.glyphs ?? [])]);
       setHasMore(Boolean(json.hasMore));
     } catch (error) {
-      alert(error instanceof Error ? error.message : "讀取更多字圖失敗");
+      toast.error(error instanceof Error ? error.message : "讀取更多字圖失敗");
     } finally {
       setIsLoadingMore(false);
     }
@@ -189,17 +222,23 @@ export function PersonalGlyphManager({
     const node = loadMoreRef.current;
     if (!node || !hasMore) return;
 
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        void loadMoreGlyphs();
-      }
-    }, { rootMargin: "360px" });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMoreGlyphs();
+        }
+      },
+      { rootMargin: "360px" },
+    );
 
     observer.observe(node);
     return () => observer.disconnect();
   }, [glyphs.length, hasMore, isLoadingMore]);
 
-  async function updateVisibility(id: number, visibility: "public" | "private") {
+  async function updateVisibility(
+    id: number,
+    visibility: "public" | "private",
+  ) {
     setBusyId(id);
     try {
       const res = await fetch(`/api/me/glyphs/${id}`, {
@@ -209,9 +248,13 @@ export function PersonalGlyphManager({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "更新失敗");
-      setGlyphs((items) => items.map((item) => (item.id === id ? { ...item, visibility: json.visibility } : item)));
+      setGlyphs((items) =>
+        items.map((item) =>
+          item.id === id ? { ...item, visibility: json.visibility } : item,
+        ),
+      );
     } catch (error) {
-      alert(error instanceof Error ? error.message : "更新失敗");
+      toast.error(error instanceof Error ? error.message : "更新失敗");
     } finally {
       setBusyId(null);
     }
@@ -226,14 +269,14 @@ export function PersonalGlyphManager({
       if (!res.ok) throw new Error(json.error ?? "刪除失敗");
       setGlyphs((items) => items.filter((item) => item.id !== id));
     } catch (error) {
-      alert(error instanceof Error ? error.message : "刪除失敗");
+      toast.error(error instanceof Error ? error.message : "刪除失敗");
       setBusyId(null);
     }
   }
 
   if (glyphs.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
+      <div className="rounded-sm border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
         尚未上傳個人字圖。
       </div>
     );
@@ -247,22 +290,22 @@ export function PersonalGlyphManager({
             value={queryChar}
             onChange={(event) => setQueryChar(event.target.value)}
             placeholder="單字"
-            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
+            className="w-full rounded-sm border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
           />
           <input
             value={queryAuthor}
             onChange={(event) => setQueryAuthor(event.target.value)}
             placeholder="作者"
-            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
+            className="w-full rounded-sm border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
           />
           <input
             value={queryWorkTitle}
             onChange={(event) => setQueryWorkTitle(event.target.value)}
             placeholder="作品"
-            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
+            className="w-full rounded-sm border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-700"
           />
         </div>
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-stone-100 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-sm bg-stone-100 p-1">
           {[
             ["all", "全部"],
             ["public", "公開"],
@@ -271,9 +314,13 @@ export function PersonalGlyphManager({
             <button
               key={value}
               type="button"
-              onClick={() => setVisibilityFilter(value as "all" | "public" | "private")}
+              onClick={() =>
+                setVisibilityFilter(value as "all" | "public" | "private")
+              }
               className={`rounded-lg px-3 py-2 text-sm font-bold ${
-                visibilityFilter === value ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
+                visibilityFilter === value
+                  ? "bg-white text-red-800 shadow-sm"
+                  : "text-stone-600 hover:text-stone-900"
               }`}
             >
               {label}
@@ -281,12 +328,12 @@ export function PersonalGlyphManager({
           ))}
         </div>
       </div>
-      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-2">
+      <div className="rounded-sm border border-stone-200 bg-[#fdfbf7] p-2">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setSelectedScriptTypes([])}
-            className={`inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-sm font-bold transition ${
+            className={`inline-flex min-h-9 items-center justify-center rounded-sm px-3 py-2 text-sm font-bold transition ${
               selectedScriptTypes.length === 0
                 ? "bg-red-800 text-white"
                 : "bg-white text-stone-600 hover:text-stone-900"
@@ -301,7 +348,7 @@ export function PersonalGlyphManager({
                 key={scriptType}
                 type="button"
                 onClick={() => toggleScriptType(scriptType)}
-                className={`inline-flex min-h-9 items-center justify-center gap-1 rounded-xl px-3 py-2 text-sm font-bold transition ${
+                className={`inline-flex min-h-9 items-center justify-center gap-1 rounded-sm px-3 py-2 text-sm font-bold transition ${
                   isSelected
                     ? "bg-red-800 text-white"
                     : "bg-white text-stone-600 hover:text-stone-900"
@@ -313,7 +360,7 @@ export function PersonalGlyphManager({
               </button>
             );
           })}
-          <div className="ml-auto grid grid-cols-2 gap-1 rounded-xl bg-stone-200 p-1">
+          <div className="ml-auto grid grid-cols-2 gap-1 rounded-sm bg-stone-200 p-1">
             {[
               ["comfortable", "舒適"],
               ["compact", "緊湊"],
@@ -323,7 +370,9 @@ export function PersonalGlyphManager({
                 type="button"
                 onClick={() => setDensity(value as "comfortable" | "compact")}
                 className={`rounded-lg px-3 py-2 text-sm font-bold ${
-                  density === value ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
+                  density === value
+                    ? "bg-white text-red-800 shadow-sm"
+                    : "text-stone-600 hover:text-stone-900"
                 }`}
               >
                 {label}
@@ -334,146 +383,185 @@ export function PersonalGlyphManager({
       </div>
 
       {filteredGlyphs.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
+        <div className="rounded-sm border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
           查無符合條件的個人字圖。
         </div>
       ) : (
         <>
-        <div className="rounded-2xl border border-stone-200 bg-white p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={toggleFilteredSelection}
-              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
-            >
-              {allFilteredSelected ? "取消本頁選取" : "選取目前結果"}
-            </button>
-            <div className="text-sm font-bold text-stone-600">已選 {selectedCount} 個</div>
-            <div className="flex flex-wrap gap-2">
+          <div className="rounded-sm border border-stone-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={() => void batchUpdateVisibility("public")}
+                onClick={toggleFilteredSelection}
+                className="inline-flex min-h-10 items-center justify-center rounded-sm border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+              >
+                {allFilteredSelected ? "取消本頁選取" : "選取目前結果"}
+              </button>
+              <div className="text-sm font-bold text-stone-600">
+                已選 {selectedCount} 個
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void batchUpdateVisibility("public")}
+                  disabled={selectedCount === 0 || isBatchBusy}
+                  className="rounded-sm border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  批次公開
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void batchUpdateVisibility("private")}
+                  disabled={selectedCount === 0 || isBatchBusy}
+                  className="rounded-sm border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  批次私人
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void batchDeleteGlyphs()}
+                  disabled={selectedCount === 0 || isBatchBusy}
+                  className="rounded-sm border border-red-200 px-3 py-2 text-sm font-bold text-red-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  批次刪除
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+              <input
+                value={batchAuthor}
+                onChange={(event) => setBatchAuthor(event.target.value)}
+                placeholder="批次作者"
+                className="rounded-sm border border-stone-300 bg-[#fdfbf7] px-3 py-2 text-sm outline-none focus:border-red-700"
+              />
+              <input
+                value={batchScriptType}
+                onChange={(event) => setBatchScriptType(event.target.value)}
+                placeholder="批次書體"
+                className="rounded-sm border border-stone-300 bg-[#fdfbf7] px-3 py-2 text-sm outline-none focus:border-red-700"
+              />
+              <input
+                value={batchWorkTitle}
+                onChange={(event) => setBatchWorkTitle(event.target.value)}
+                placeholder="批次作品名"
+                className="rounded-sm border border-stone-300 bg-[#fdfbf7] px-3 py-2 text-sm outline-none focus:border-red-700"
+              />
+              <button
+                type="button"
+                onClick={() => void batchUpdateMetadata()}
                 disabled={selectedCount === 0 || isBatchBusy}
-                className="rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-sm bg-stone-800 px-4 py-2 text-sm font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                批次公開
-              </button>
-              <button
-                type="button"
-                onClick={() => void batchUpdateVisibility("private")}
-                disabled={selectedCount === 0 || isBatchBusy}
-                className="rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                批次私人
-              </button>
-              <button
-                type="button"
-                onClick={() => void batchDeleteGlyphs()}
-                disabled={selectedCount === 0 || isBatchBusy}
-                className="rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                批次刪除
+                套用資料
               </button>
             </div>
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-            <input
-              value={batchAuthor}
-              onChange={(event) => setBatchAuthor(event.target.value)}
-              placeholder="批次作者"
-              className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-red-700"
-            />
-            <input
-              value={batchScriptType}
-              onChange={(event) => setBatchScriptType(event.target.value)}
-              placeholder="批次書體"
-              className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-red-700"
-            />
-            <input
-              value={batchWorkTitle}
-              onChange={(event) => setBatchWorkTitle(event.target.value)}
-              placeholder="批次作品名"
-              className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-red-700"
-            />
-            <button
-              type="button"
-              onClick={() => void batchUpdateMetadata()}
-              disabled={selectedCount === 0 || isBatchBusy}
-              className="rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              套用資料
-            </button>
-          </div>
-        </div>
-        <div className={density === "compact" ? "grid gap-2 sm:grid-cols-3 lg:grid-cols-4" : "grid gap-3 sm:grid-cols-2 lg:grid-cols-3"}>
-      {filteredGlyphs.map((glyph) => (
-        <div key={glyph.id} className={`rounded-2xl border bg-stone-50 ${density === "compact" ? "p-2" : "p-3"} ${selectedSet.has(glyph.id) ? "border-red-700" : "border-stone-200"}`}>
-          <label className="mb-2 inline-flex items-center gap-2 text-sm font-bold text-stone-600">
-            <input
-              type="checkbox"
-              checked={selectedSet.has(glyph.id)}
-              onChange={() => toggleGlyphSelection(glyph.id)}
-              className="h-4 w-4 accent-red-800"
-            />
-            選取
-          </label>
-          <GlyphImage glyph={glyph} size={density === "compact" ? 84 : 112} containerClassName={density === "compact" ? "h-[84px] w-full" : "h-[112px] w-full"} />
-          <div className={`${density === "compact" ? "mt-2" : "mt-3"} flex items-start justify-between gap-3`}>
-            <div className="min-w-0">
-              <div className={`font-serif font-bold ${density === "compact" ? "text-base" : "text-lg"}`}>{glyph.char}</div>
-              <div className="truncate text-sm text-stone-600">{glyph.author || "佚名"}｜{glyph.scriptType || "未標註"}</div>
-              <div className="truncate text-xs text-stone-500">{glyph.workTitle || "未標題"}</div>
-            </div>
-            <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${
-              glyph.visibility === "public" ? "bg-emerald-50 text-emerald-700" : "bg-stone-200 text-stone-700"
-            }`}>
-              {glyph.visibility === "public" ? "公開" : "私人"}
-            </span>
-          </div>
-          <div className="mt-2 text-xs text-stone-500">
-            讚 {glyph.likeCount}｜集字 {glyph.collectionCount}｜{glyph.createdAt}
-          </div>
-          <div className={`${density === "compact" ? "mt-2" : "mt-3"} grid grid-cols-[1fr_auto] gap-2`}>
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                href={`/glyph/${glyph.id}`}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+          <div
+            className={`animate-in fade-in duration-300 ${density === "compact" ? "grid gap-2 sm:grid-cols-3 lg:grid-cols-4" : "grid gap-3 sm:grid-cols-2 lg:grid-cols-3"}`}
+          >
+            {filteredGlyphs.map((glyph) => (
+              <div
+                key={glyph.id}
+                className={`rounded-sm border bg-[#fdfbf7] ${density === "compact" ? "p-2" : "p-3"} ${selectedSet.has(glyph.id) ? "border-red-700" : "border-stone-200"}`}
               >
-                詳情
-              </Link>
-              <Link
-                href={`/upload/edit/${glyph.id}`}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
-              >
-                編輯
-              </Link>
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              <button
-                type="button"
-                onClick={() => updateVisibility(glyph.id, glyph.visibility === "public" ? "private" : "public")}
-                disabled={busyId === glyph.id}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busyId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                {glyph.visibility === "public" ? "私人" : "公開"}
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => void deleteGlyph(glyph.id)}
-              disabled={busyId === glyph.id}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-200 bg-white text-red-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="刪除個人字圖"
-              title="刪除"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+                <label className="mb-2 inline-flex items-center gap-2 text-sm font-bold text-stone-600">
+                  <input
+                    type="checkbox"
+                    checked={selectedSet.has(glyph.id)}
+                    onChange={() => toggleGlyphSelection(glyph.id)}
+                    className="h-4 w-4 accent-red-800"
+                  />
+                  選取
+                </label>
+                <GlyphImage
+                  glyph={glyph}
+                  size={density === "compact" ? 84 : 112}
+                  containerClassName={
+                    density === "compact"
+                      ? "h-[84px] w-full"
+                      : "h-[112px] w-full"
+                  }
+                />
+                <div
+                  className={`${density === "compact" ? "mt-2" : "mt-3"} flex items-start justify-between gap-3`}
+                >
+                  <div className="min-w-0">
+                    <div
+                      className={`font-serif font-bold ${density === "compact" ? "text-base" : "text-lg"}`}
+                    >
+                      {glyph.char}
+                    </div>
+                    <div className="truncate text-sm text-stone-600">
+                      {glyph.author || "佚名"}｜{glyph.scriptType || "未標註"}
+                    </div>
+                    <div className="truncate text-xs text-stone-500">
+                      {glyph.workTitle || "未標題"}
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${
+                      glyph.visibility === "public"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-stone-200 text-stone-700"
+                    }`}
+                  >
+                    {glyph.visibility === "public" ? "公開" : "私人"}
+                  </span>
+                </div>
+                <div className="mt-2 text-xs text-stone-500">
+                  讚 {glyph.likeCount}｜集字 {glyph.collectionCount}｜
+                  {glyph.createdAt}
+                </div>
+                <div
+                  className={`${density === "compact" ? "mt-2" : "mt-3"} grid grid-cols-[1fr_auto] gap-2`}
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <Link
+                      href={`/glyph/${glyph.id}`}
+                      className="inline-flex min-h-10 items-center justify-center rounded-sm border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                    >
+                      詳情
+                    </Link>
+                    <Link
+                      href={`/upload/edit/${glyph.id}`}
+                      className="inline-flex min-h-10 items-center justify-center rounded-sm border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                    >
+                      編輯
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateVisibility(
+                          glyph.id,
+                          glyph.visibility === "public" ? "private" : "public",
+                        )
+                      }
+                      disabled={busyId === glyph.id}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busyId === glyph.id ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      {glyph.visibility === "public" ? "私人" : "公開"}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void deleteGlyph(glyph.id)}
+                    disabled={busyId === glyph.id}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-red-200 bg-white text-red-700 hover:border-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="刪除個人字圖"
+                    title="刪除"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div ref={loadMoreRef} className="col-span-full min-h-1" />
           </div>
-        </div>
-      ))}
-          <div ref={loadMoreRef} className="col-span-full min-h-1" />
-        </div>
         </>
       )}
       {hasMore && (
@@ -482,7 +570,7 @@ export function PersonalGlyphManager({
             type="button"
             onClick={() => void loadMoreGlyphs()}
             disabled={isLoadingMore}
-            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-10 items-center justify-center rounded-sm border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isLoadingMore ? "載入中..." : "載入更多"}
           </button>

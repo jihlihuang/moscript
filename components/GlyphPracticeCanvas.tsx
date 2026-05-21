@@ -1,7 +1,7 @@
 "use client";
 
 import getStroke from "perfect-freehand";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { Check, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { type GlyphLike } from "@/components/GlyphImage";
 
@@ -29,14 +29,28 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
   const [guideOpacity, setGuideOpacity] = useState(0.28);
   const [velocitySensitive, setVelocitySensitive] = useState(true);
   const [strokeCount, setStrokeCount] = useState(0);
+  const [confirmClear, setConfirmClear] = useState(false);
 
-  // 新增：元件掛載時偵測螢幕寬度，自動調整預設筆粗
+  // 新增：元件掛載及視窗大小改變時偵測螢幕寬度，自動調整預設筆粗
   useEffect(() => {
-    // 以 768px 作為手機與平板的分界 (對應 Tailwind 的 md 斷點)
-    if (window.innerWidth < 768) {
-      setBrushSize(7);
-    }
+    const handleResize = () => {
+      // 以 768px 作為手機與平板的分界 (對應 Tailwind 的 md 斷點)
+      if (window.innerWidth < 768) {
+        setBrushSize((prev) => (prev > 10 ? 7 : prev));
+      }
+    };
+    
+    handleResize(); // Initial check
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    if (confirmClear) {
+      const timer = setTimeout(() => setConfirmClear(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [confirmClear]);
 
   function getCanvasPoint(event: PointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
@@ -310,6 +324,15 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
     redraw();
   }
 
+  function handleClearClick() {
+    if (confirmClear) {
+      clearCanvas();
+      setConfirmClear(false);
+    } else {
+      setConfirmClear(true);
+    }
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
       <div className="rounded-3xl border border-stone-200 bg-white p-3 shadow-sm sm:p-5">
@@ -327,12 +350,16 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
             </button>
             <button
               type="button"
-              onClick={clearCanvas}
+              onClick={handleClearClick}
               disabled={strokeCount === 0}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-stone-600 shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:text-red-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-              title="清除畫面 (Clear)"
+              className={`flex h-10 w-10 items-center justify-center rounded-full shadow-sm backdrop-blur-sm transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${
+                confirmClear
+                  ? "bg-red-600 text-white hover:bg-red-700"
+                  : "bg-white/90 text-stone-600 hover:bg-white hover:text-red-600"
+              }`}
+              title={confirmClear ? "確定清除？" : "清除畫面 (Clear)"}
             >
-              <Trash2 className="h-5 w-5" />
+              {confirmClear ? <Check className="h-5 w-5" /> : <Trash2 className="h-5 w-5" />}
             </button>
           </div>
 
@@ -341,6 +368,7 @@ export function GlyphPracticeCanvas({ glyph }: { glyph: GlyphLike }) {
             alt={`${glyph.char}｜${glyph.author ?? "佚名"}`}
             className="absolute inset-0 h-full w-full object-contain p-8 mix-blend-multiply sm:p-12"
             style={{ opacity: guideOpacity }}
+            loading="lazy"
           />
           <canvas
             ref={canvasRef}

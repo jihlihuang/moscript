@@ -1410,6 +1410,7 @@ export function AdminGlyphUploadForm({
   const [isComposingUploadAuthor, setIsComposingUploadAuthor] = useState(false);
   const [message, setMessage] = useState("");
   const [successToast, setSuccessToast] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessingUploadImage, setIsProcessingUploadImage] = useState(false);
   const [processedUploadFile, setProcessedUploadFile] = useState<File | null>(null);
@@ -2359,8 +2360,67 @@ export function AdminGlyphUploadForm({
     </div>
   ) : null;
 
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    if (isUploading || isProcessingUploadImage || isBatchProcessing || isBatchUploading) return;
+    
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    if (uploadMode === "single" || isReplacingGlyph) {
+      if (fileInputRef.current) {
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInputRef.current.files = dataTransfer.files;
+        const event = new Event('change', { bubbles: true });
+        fileInputRef.current.dispatchEvent(event);
+      }
+    } else {
+      if (batchFileInputRef.current) {
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        batchFileInputRef.current.files = dataTransfer.files;
+        const event = new Event('change', { bubbles: true });
+        batchFileInputRef.current.dispatchEvent(event);
+      }
+    }
+  };
+
   return (
-    <form onSubmit={upload} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] lg:gap-5">
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`relative rounded-3xl transition-all ${
+        isDragging ? "ring-4 ring-red-500/50 ring-offset-4 ring-offset-stone-50 bg-red-50/50" : ""
+      }`}
+    >
+      {isDragging && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center rounded-3xl bg-white/80 backdrop-blur-sm border-2 border-dashed border-red-500">
+          <div className="flex flex-col items-center gap-3 text-red-700">
+            <div className="rounded-full bg-red-100 p-4">
+              <Upload className="h-8 w-8" />
+            </div>
+            <p className="font-bold text-lg">將圖片拖放至此</p>
+          </div>
+        </div>
+      )}
+      <form onSubmit={upload} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] lg:gap-5">
       <div className="space-y-3">
         {!isReplacingGlyph && (
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-stone-100 p-1">
@@ -2736,7 +2796,7 @@ export function AdminGlyphUploadForm({
                       </div>
                     </div>
                     <div className="mb-2 flex aspect-square items-center justify-center rounded-lg border border-stone-100 bg-white">
-                      <img src={item.previewUrl} alt={`拆出的第 ${index + 1} 個字`} className="max-h-full max-w-full object-contain p-2" />
+                      <img src={item.previewUrl} alt={`拆出的第 ${index + 1} 個字`} className="max-h-full max-w-full object-contain p-2" loading="lazy" />
                     </div>
                     <input
                       ref={(node) => {
@@ -3101,5 +3161,6 @@ export function AdminGlyphUploadForm({
         </div>
       )}
     </form>
+    </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, RefreshCw, Search, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, RefreshCw, Search, Trash2, UserRound, X } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
 import { GlyphLikeButton } from "@/components/GlyphLikeButton";
@@ -100,11 +100,13 @@ export default function FrontStagePage() {
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const pendingSaveStartedRef = useRef(false);
   const collectionLoadStartedRef = useRef(false);
   const initialGlyphLoadStartedRef = useRef(false);
   const loadMoreSentinelRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const loadingMoreCharsRef = useRef<Record<string, boolean>>({});
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -337,6 +339,13 @@ export default function FrontStagePage() {
       setQ(cleanedQ);
       setSelected([]);
       if (!preservePosition) setActivePosition(null);
+    }
+
+    if (!cleanedQ) {
+      setData(null);
+      setLoading(false);
+      setMessage("");
+      return;
     }
 
     setLoading(true);
@@ -692,55 +701,92 @@ export default function FrontStagePage() {
               }}
               className="grid gap-2 sm:gap-3"
             >
-              <label className="relative block">
-                <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
+              <div className="flex gap-2">
+                <label className="relative block flex-1">
+                  <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
+                  <input
+                    value={q}
+                    onCompositionStart={() => setIsComposingQuery(true)}
+                    onCompositionEnd={(e) => {
+                      setIsComposingQuery(false);
+                      const nextQ = onlyChinese(e.currentTarget.value);
+                      setQ(nextQ);
+                      setSelected([]);
+                      setActivePosition(null);
+                      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+                      searchTimeoutRef.current = setTimeout(() => void searchGlyphs(selectedScriptTypes, false, nextQ), 500);
+                    }}
+                    onChange={(e) => {
+                      const nativeEvent = e.nativeEvent as InputEvent;
+                      const nextQ =
+                        isComposingQuery || nativeEvent.isComposing
+                          ? e.target.value
+                          : onlyChinese(e.target.value);
+                      setQ(nextQ);
+                      
+                      if (!isComposingQuery && !nativeEvent.isComposing) {
+                        setSelected([]);
+                        setActivePosition(null);
+                        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+                        searchTimeoutRef.current = setTimeout(() => void searchGlyphs(selectedScriptTypes, false, nextQ), 500);
+                      }
+                    }}
+                    className="w-full rounded-xl border border-stone-300 bg-stone-50 py-3 pl-10 pr-10 text-base outline-none focus:border-red-700 sm:rounded-2xl sm:pr-12 sm:text-lg"
+                    placeholder="輸入中文，例如：小橋流水人家"
+                    inputMode="text"
+                    autoComplete="off"
+                  />
+                  {q && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQ("");
+                        setSelected([]);
+                        setActivePosition(null);
+                        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+                        void searchGlyphs(selectedScriptTypes, false, "");
+                      }}
+                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-200 hover:text-stone-600 sm:right-3"
+                      aria-label="清除搜尋"
+                      title="清除搜尋"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  )}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsFilterOpen(!isFilterOpen)}
+                  className={`inline-flex items-center justify-center rounded-xl border px-3 sm:hidden ${
+                    isFilterOpen || author || resultScope !== "library" || resultSort !== "popular" || selectedScriptTypes.length > 0
+                      ? "border-red-700 bg-red-50 text-red-800"
+                      : "border-stone-300 bg-stone-50 text-stone-600"
+                  }`}
+                >
+                  <Filter className="h-5 w-5" />
+                </button>
+              </div>
+              
+              <div className={`grid gap-2 sm:gap-3 ${isFilterOpen ? "block" : "hidden sm:grid"}`}>
                 <input
-                  value={q}
-                  onCompositionStart={() => setIsComposingQuery(true)}
-                  onCompositionEnd={(e) => {
-                    setIsComposingQuery(false);
-                    const nextQ = onlyChinese(e.currentTarget.value);
-                    setQ(nextQ);
-                    setSelected([]);
-                    setActivePosition(null);
-                  }}
+                  value={author}
                   onChange={(e) => {
-                    const nativeEvent = e.nativeEvent as InputEvent;
-                    const nextQ =
-                      isComposingQuery || nativeEvent.isComposing
-                        ? e.target.value
-                        : onlyChinese(e.target.value);
-                    setQ(nextQ);
-                    setSelected([]);
-                    setActivePosition(null);
+                    setAuthor(e.target.value);
+                    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+                    searchTimeoutRef.current = setTimeout(() => void searchGlyphs(selectedScriptTypes, false, q), 500);
                   }}
-                  className="w-full rounded-xl border border-stone-300 bg-stone-50 py-3 pl-10 pr-3 text-base outline-none focus:border-red-700 sm:rounded-2xl sm:pr-4 sm:text-lg"
-                  placeholder="輸入中文，例如：小橋流水人家"
-                  inputMode="text"
-                  autoComplete="off"
+                  className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
+                  placeholder="作者"
                 />
-              </label>
-              <input
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
-                placeholder="作者"
-              />
-              <input
-                value={collectionTitle}
-                onChange={(e) => setCollectionTitle(e.target.value)}
-                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
-                placeholder="作品標題"
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="rounded-xl bg-red-800 px-6 py-3 font-bold text-white hover:bg-red-700 disabled:opacity-50 sm:rounded-2xl"
-              >
-                {loading ? "搜尋中" : "搜尋"}
-              </button>
+                <input
+                  value={collectionTitle}
+                  onChange={(e) => setCollectionTitle(e.target.value)}
+                  className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
+                  placeholder="作品標題"
+                />
+              </div>
             </form>
-            <div className="grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
+            <div className={`grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600 ${isFilterOpen ? "block" : "hidden sm:grid"}`}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-stone-700">查詢範圍</span>
                 {resultScopeOptions.map((option) => {
@@ -792,7 +838,7 @@ export default function FrontStagePage() {
                 })}
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className={`overflow-x-auto ${isFilterOpen ? "block" : "hidden sm:block"}`}>
               <div className="inline-flex min-w-full gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-1 lg:flex-wrap">
                 <button
                   type="button"
@@ -993,14 +1039,16 @@ export default function FrontStagePage() {
 
           <section className="relative min-h-[320px] rounded-2xl border border-stone-200 bg-white p-3 sm:min-h-[400px] sm:rounded-3xl sm:p-4">
             {loading && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-3xl bg-white/80 backdrop-blur-sm">
-                <div className="flex animate-pulse items-center gap-2 opacity-80">
-                  <img src="/glyphs/%E5%A2%A8/%E7%8E%8B%E9%90%B8_%E8%A1%8C_%E7%8E%8B%E9%90%B8%20%E8%A1%8C%E6%9B%B8_0001.gif" alt="墨" className="h-20 w-20 object-contain mix-blend-multiply" />
-                  <img src="/glyphs/%E8%BF%B9/%E7%8E%8B%E9%90%B8_%E8%A1%8C_%E7%8E%8B%E9%90%B8%20%E8%A1%8C%E6%9B%B8_0001.gif" alt="跡" className="h-20 w-20 object-contain mix-blend-multiply" />
-                </div>
-                <p className="mt-4 font-serif text-lg font-bold tracking-widest text-stone-600">研墨中...</p>
+              <div className="absolute left-0 right-0 top-0 h-1 overflow-hidden rounded-t-2xl sm:rounded-t-3xl">
+                <div className="h-full w-full origin-left animate-[progress_1s_ease-in-out_infinite] bg-red-700/80" />
               </div>
             )}
+            <style dangerouslySetInnerHTML={{ __html: `
+              @keyframes progress {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(100%); }
+              }
+            `}} />
             <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-stone-600 sm:text-base">
               <Filter className="h-5 w-5" />
               <span>搜尋結果</span>
@@ -1026,8 +1074,34 @@ export default function FrontStagePage() {
             </div>
 
             {!data && (
-              <div className="rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500 sm:p-10 sm:text-base">
-                先按「搜尋」，系統會依每個字顯示可用的書法字圖。
+              <div className="rounded-2xl border border-dashed border-stone-300 p-6 text-center text-stone-500 sm:p-10">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-stone-100">
+                  <Search className="h-8 w-8 text-stone-400" />
+                </div>
+                <h3 className="mb-2 text-lg font-bold text-stone-700">開始探索書法之美</h3>
+                <p className="text-sm sm:text-base">在上方輸入文字並按下搜尋，系統會依每個字顯示可用的書法字圖。</p>
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQ("小橋流水人家");
+                      void searchGlyphs(selectedScriptTypes, false, "小橋流水人家");
+                    }}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                  >
+                    試試「小橋流水人家」
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQ("墨跡");
+                      void searchGlyphs(selectedScriptTypes, false, "墨跡");
+                    }}
+                    className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                  >
+                    試試「墨跡」
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1036,7 +1110,24 @@ export default function FrontStagePage() {
               return (
                 <div key={`${char}-${index}`} className="mb-6 last:mb-0">
                   {glyphs.length === 0 ? (
-                    <div className="rounded-2xl bg-stone-50 p-6 text-stone-500">目前資料庫沒有這個字。</div>
+                    <div className="flex flex-col items-center justify-center rounded-2xl bg-stone-50 p-6 text-center text-stone-500">
+                      <p className="mb-3">目前資料庫沒有這個字「{char}」。</p>
+                      {user ? (
+                        <Link
+                          href="/upload"
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white hover:bg-stone-900"
+                        >
+                          上傳「{char}」的字圖
+                        </Link>
+                      ) : (
+                        <Link
+                          href="/api/auth/google?returnTo=/upload"
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                        >
+                          登入以貢獻字圖
+                        </Link>
+                      )}
+                    </div>
                   ) : (
                     <>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-6">
