@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const sessionCookieName = "moscript_session";
-const protectedPagePrefixes = ["/admin", "/collections"];
+const protectedPagePrefixes = ["/admin"];
 
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
@@ -17,5 +17,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/collections/:path*"],
+  matcher: ["/admin/:path*"],
 };

@@ -27,17 +27,14 @@ function normalizeItems(items: IncomingItem[]) {
 }
 
 export async function GET(_req: NextRequest, { params }: Params) {
-  const user = requireRequestUser(_req);
-  if (!user) return unauthorized();
-
   const { id } = await params;
   const db = await getDb();
 
   const collection = db.prepare(`
     SELECT id, title, text, display_direction, created_at
     FROM collections
-    WHERE id = ? AND user_id = ?
-  `).get(id, user.id);
+    WHERE id = ?
+  `).get(id);
 
   if (!collection) {
     return NextResponse.json({ error: "找不到集字作品" }, { status: 404 });

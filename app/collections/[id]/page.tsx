@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { ArrowLeft, Search } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -17,6 +17,7 @@ type Params = {
 
 type Collection = {
   id: number;
+  user_id: string | null;
   title: string;
   text: string;
   display_direction: "horizontal" | "vertical" | null;
@@ -43,16 +44,15 @@ type Item = {
 
 export default async function CollectionPage({ params }: Params) {
   const user = await getCurrentUser();
-  if (!user) redirect("/api/auth/google?returnTo=/collections");
 
   const { id } = await params;
   const db = await getDb();
 
   const collection = db.prepare(`
-    SELECT id, title, text, display_direction, created_at
+    SELECT id, user_id, title, text, display_direction, created_at
     FROM collections
-    WHERE id = ? AND user_id = ?
-  `).get(id, user.id) as Collection | undefined;
+    WHERE id = ?
+  `).get(id) as Collection | undefined;
 
   if (!collection) notFound();
 
@@ -76,7 +76,7 @@ export default async function CollectionPage({ params }: Params) {
     ${glyphStatsJoinSql("g")}
     WHERE ci.collection_id = ?
     ORDER BY ci.position ASC
-  `).all(user.id, id) as Item[];
+  `).all(user?.id ?? "", id) as Item[];
   const securedItems = items.map((item) => ({
     ...item,
     image_url: glyphImageUrlForAccess({
@@ -119,11 +119,15 @@ export default async function CollectionPage({ params }: Params) {
               <Search className="h-4 w-4" />
               載入到首頁
             </Link>
-            <DeleteCollectionButton id={collection.id} redirectOnSuccess={true} redirectTo="/collections" />
-            <Link href="/collections" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
-              <ArrowLeft className="h-4 w-4" />
-              回集字列表
-            </Link>
+            {user?.id === collection.user_id && (
+              <>
+                <DeleteCollectionButton id={collection.id} redirectOnSuccess={true} redirectTo="/collections" />
+                <Link href="/collections" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
+                  <ArrowLeft className="h-4 w-4" />
+                  回集字列表
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -134,7 +138,7 @@ export default async function CollectionPage({ params }: Params) {
             collectionId={collection.id}
             initialDirection={collection.display_direction === "vertical" ? "vertical" : "horizontal"}
             items={securedItems}
-            isAuthenticated={true}
+            isAuthenticated={Boolean(user)}
             likeReturnTo={`/collections/${collection.id}`}
           />
 

@@ -255,11 +255,6 @@ export default function FrontStagePage() {
     const collectionId = url.searchParams.get("collectionId");
     if (!collectionId) return;
 
-    if (!user) {
-      window.location.href = `/api/auth/google?returnTo=${encodeURIComponent(`/?collectionId=${collectionId}`)}`;
-      return;
-    }
-
     collectionLoadStartedRef.current = true;
     void loadCollectionToWorkspace(collectionId);
   }, [isAuthChecked, user]);
