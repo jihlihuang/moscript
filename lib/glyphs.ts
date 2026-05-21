@@ -176,8 +176,35 @@ export async function listScriptTypesForGlyphs(options: Pick<SearchGlyphOptions,
             WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
             ELSE script_type
           END
+        ) IN ('未標註', '未知書體') THEN 1
+        ELSE 0
+      END,
+      CASE
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
         ) LIKE '%草%' THEN 0
-        ELSE 1
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%行%' THEN 1
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%隸%' THEN 2
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%楷%' THEN 3
+        ELSE 4
       END,
       count DESC,
       label

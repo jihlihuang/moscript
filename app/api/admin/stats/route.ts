@@ -15,10 +15,57 @@ export async function GET(req: NextRequest) {
   const totalChars = db.prepare("SELECT COUNT(DISTINCT char) as count FROM glyphs").get() as { count: number };
   const totalCollections = db.prepare("SELECT COUNT(*) as count FROM collections").get() as { count: number };
   const scripts = db.prepare(`
-    SELECT COALESCE(script_type, '未標註') as label, COUNT(*) as count
+    SELECT
+      CASE
+        WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+        ELSE script_type
+      END as label,
+      COUNT(*) as count
     FROM glyphs
-    GROUP BY COALESCE(script_type, '未標註')
-    ORDER BY count DESC
+    GROUP BY
+      CASE
+        WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+        ELSE script_type
+      END
+    ORDER BY
+      CASE
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) IN ('未標註', '未知書體') THEN 1
+        ELSE 0
+      END,
+      CASE
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%草%' THEN 0
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%行%' THEN 1
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%隸%' THEN 2
+        WHEN (
+          CASE
+            WHEN script_type IS NULL OR trim(script_type) = '' THEN '未標註'
+            ELSE script_type
+          END
+        ) LIKE '%楷%' THEN 3
+        ELSE 4
+      END,
+      count DESC,
+      label
   `).all();
 
   await logAdminAction(req, user, "admin_stats_view", {

@@ -29,8 +29,25 @@ type CurrentUser = {
   name: string | null;
 };
 
+const unknownScriptLabels = new Set(["未標註", "未知書體"]);
+const preferredScriptOrder = ["草", "行", "隸", "楷"];
+
 function onlyChinese(value: string) {
   return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
+}
+
+function isUnknownScriptLabel(label: string) {
+  return unknownScriptLabels.has(label.trim());
+}
+
+function sortScriptLabels(labels: string[]) {
+  function rank(label: string) {
+    if (isUnknownScriptLabel(label)) return 999;
+    const index = preferredScriptOrder.findIndex((script) => label.includes(script));
+    return index >= 0 ? index : 100;
+  }
+
+  return [...labels].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, "zh-Hant"));
 }
 
 export default function AdminPage() {
@@ -70,7 +87,7 @@ export default function AdminPage() {
   const hasSearchKeyword = onlyChinese(keyword).length > 0;
 
   const scriptFilters = useMemo(
-    () => ["", ...(stats?.scripts.filter((script) => script.count > 0).map((script) => script.label) ?? [])],
+    () => ["", ...sortScriptLabels(stats?.scripts.filter((script) => script.count > 0).map((script) => script.label) ?? [])],
     [stats]
   );
 

@@ -48,9 +48,25 @@ type CollectionSavePayload = {
 };
 
 const pendingCollectionKey = "moscript_pending_collection";
+const unknownScriptLabels = new Set(["未標註", "未知書體"]);
+const preferredScriptOrder = ["草", "行", "隸", "楷"];
 
 function onlyChinese(value: string) {
   return Array.from(value).filter((char) => /\p{Script=Han}/u.test(char)).join("");
+}
+
+function isUnknownScriptLabel(label: string) {
+  return unknownScriptLabels.has(label.trim());
+}
+
+function sortScriptLabels(labels: string[]) {
+  function rank(label: string) {
+    if (isUnknownScriptLabel(label)) return 999;
+    const index = preferredScriptOrder.findIndex((script) => label.includes(script));
+    return index >= 0 ? index : 100;
+  }
+
+  return [...labels].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, "zh-Hant"));
 }
 
 export default function FrontStagePage() {
@@ -213,7 +229,7 @@ export default function FrontStagePage() {
 
       const res = await fetch(`/api/glyphs/scripts?${params.toString()}`);
       const json = (await res.json()) as ScriptResponse;
-      const scripts = json.scripts.map((script) => script.label);
+      const scripts = sortScriptLabels(json.scripts.map((script) => script.label));
       setAvailableScripts(scripts);
       setScriptType((current) => (current && !scripts.includes(current) ? "" : current));
     }
@@ -520,7 +536,7 @@ export default function FrontStagePage() {
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
                   >
                     {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    <span className="sm:hidden">{isSavingCollection ? "儲存中" : "儲存"}</span>
+                    <span className="sm:hidden">{isSavingCollection ? "儲存中" : "儲存集字"}</span>
                     <span className="hidden sm:inline">{isSavingCollection ? "儲存中" : "儲存集字作品"}</span>
                   </button>
                 </div>

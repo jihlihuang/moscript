@@ -15,7 +15,23 @@ type CurrentUser = {
   name: string | null;
 };
 
-const commonScriptTypes = ["篆", "隸", "楷", "行", "草", "未標註"];
+const commonScriptTypes = ["草", "行", "隸", "楷"];
+const unknownScriptLabels = new Set(["未標註", "未知書體"]);
+const preferredScriptOrder = ["草", "行", "隸", "楷"];
+
+function isUnknownScriptLabel(label: string) {
+  return unknownScriptLabels.has(label.trim());
+}
+
+function sortScriptLabels(labels: string[]) {
+  function rank(label: string) {
+    if (isUnknownScriptLabel(label)) return 999;
+    const index = preferredScriptOrder.findIndex((script) => label.includes(script));
+    return index >= 0 ? index : 100;
+  }
+
+  return [...labels].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, "zh-Hant"));
+}
 
 export default function AdminUploadPage() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -30,14 +46,14 @@ export default function AdminUploadPage() {
   const isReplaceMode = Boolean(replaceGlyphId);
 
   const uploadScriptOptions = useMemo(
-    () => [
-      ...new Set([
+    () => {
+      const labels = [
         ...commonScriptTypes,
-        ...(stats?.scripts
-          .map((script) => script.label)
-          .filter((label) => label && label !== "未標註") ?? []),
-      ]),
-    ],
+        ...(stats?.scripts.map((script) => script.label).filter(Boolean) ?? []),
+        "未標註",
+      ];
+      return sortScriptLabels([...new Set(labels)]);
+    },
     [stats]
   );
 
