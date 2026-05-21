@@ -17,6 +17,10 @@ type GlyphDto = GlyphLike & {
   source?: string | null;
   license?: string | null;
   qualityScore?: number;
+  ownerUserId?: string | null;
+  visibility?: string;
+  likeCount?: number;
+  collectionCount?: number;
 };
 
 type GlyphResponse = {
@@ -145,6 +149,7 @@ export default function AdminPage() {
     if (cleanedKeyword) params.set("q", cleanedKeyword);
     if (searchAuthor) params.set("author", searchAuthor);
     if (nextScriptType) params.set("scriptType", nextScriptType);
+    params.set("includeAllPersonal", "1");
     setIsSearching(true);
     try {
       const res = await fetch(`/api/glyphs?${params.toString()}`);
@@ -482,12 +487,19 @@ export default function AdminPage() {
               )}
               <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
               {visibleGlyphs.map((glyph) => (
-                <div key={glyph.id} className="rounded-2xl border border-stone-200 bg-stone-50 p-2 sm:p-3">
+                <div key={glyph.id} className="flex flex-col rounded-2xl border border-stone-200 bg-stone-50 p-2 sm:p-3">
                   <GlyphImage glyph={glyph} size={108} containerClassName="h-[96px] w-full sm:h-[108px] sm:w-full" />
                   <div className="mt-2 text-sm font-medium">{glyph.char}｜{glyph.author || "佚名"}</div>
                   <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
-                  <div className="mt-1 truncate text-xs text-zinc-600">ID {glyph.id}</div>
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-1 text-xs text-zinc-600">
+                    讚 {glyph.likeCount ?? 0}｜集字 {glyph.collectionCount ?? 0}<br/>ID {glyph.id}
+                  </div>
+                  {glyph.ownerUserId && (
+                    <div className="mt-1 text-xs font-bold text-red-700">
+                      {glyph.visibility === "private" ? "個人私人" : "個人公開"}
+                    </div>
+                  )}
+                  <div className="mt-auto pt-3 flex gap-2">
                         <Link
                           href={glyphEditHref(glyph)}
                           aria-disabled={isForbidden}
