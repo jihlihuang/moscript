@@ -229,19 +229,28 @@ export default async function PersonalPage() {
                       <div key={collection.id} className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
                         <div className="mb-3 flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <Link href={`/collections/${collection.id}`} className="line-clamp-1 font-serif text-base font-bold hover:text-red-800">
+                            <h3 className="line-clamp-1 font-serif text-base font-bold">
                               {collection.title || "未命名集字作品"}
-                            </Link>
+                            </h3>
                             <p className="mt-1 text-xs text-stone-500">{collection.created_at}｜{collection.item_count} 字</p>
                           </div>
-                          <DeleteCollectionButton id={collection.id} />
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Link
+                              href={`/collections/${collection.id}`}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-800"
+                              aria-label={`查看 ${collection.title || "未命名集字作品"}`}
+                              title="查看作品"
+                            >
+                              <BookOpen className="h-5 w-5" />
+                            </Link>
+                            <DeleteCollectionButton id={collection.id} />
+                          </div>
                         </div>
                         <CollectionPreviewGlyphs
                           collectionId={collection.id}
                           initialDirection={collection.display_direction === "vertical" ? "vertical" : "horizontal"}
                           items={items}
                           text={collection.text}
-                          detailHref={`/collections/${collection.id}`}
                         />
                       </div>
                     );

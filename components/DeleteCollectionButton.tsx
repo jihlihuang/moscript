@@ -7,9 +7,10 @@ import { Trash2 } from "lucide-react";
 type Props = {
   id: number;
   redirectOnSuccess?: boolean;
+  redirectTo?: string;
 };
 
-export function DeleteCollectionButton({ id, redirectOnSuccess = false }: Props) {
+export function DeleteCollectionButton({ id, redirectOnSuccess = false, redirectTo = "/me" }: Props) {
   const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
 
@@ -27,7 +28,7 @@ export function DeleteCollectionButton({ id, redirectOnSuccess = false }: Props)
 
       if (res.ok) {
         if (redirectOnSuccess) {
-          router.push("/me");
+          router.push(redirectTo);
           router.refresh();
         } else {
           router.refresh();

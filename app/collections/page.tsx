@@ -108,17 +108,19 @@ export default async function CollectionsPage() {
                   key={collection.id}
                   className="group relative flex flex-col justify-between rounded-2xl border border-stone-200 bg-white p-3 transition hover:border-red-700 hover:bg-stone-50 sm:p-4"
                 >
-                  <Link
-                    href={`/collections/${collection.id}`}
-                    className="absolute inset-0 z-10 rounded-2xl"
-                    aria-label={`查看 ${collection.title || "未命名集字作品"}`}
-                  />
                   <div className="relative z-0 mb-3 flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="line-clamp-1 font-serif text-base font-bold sm:text-lg">{collection.title || "未命名集字作品"}</h2>
                       <p className="mt-1 text-xs text-stone-500 sm:text-sm">{collection.created_at}</p>
                     </div>
-                    <BookOpen className="mt-1 h-5 w-5 shrink-0 text-red-600" />
+                    <Link
+                      href={`/collections/${collection.id}`}
+                      className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-800"
+                      aria-label={`查看 ${collection.title || "未命名集字作品"}`}
+                      title="查看作品"
+                    >
+                      <BookOpen className="h-5 w-5" />
+                    </Link>
                   </div>
                   <CollectionPreviewGlyphs
                     collectionId={collection.id}
