@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { requireRequestUser, unauthorized } from "@/lib/auth";
 import { onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
+import { logUsageEvent } from "@/lib/usage-log";
 
 export const runtime = "nodejs";
 
@@ -12,12 +13,14 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
+    await logUsageEvent({ eventType: "upload_failed", subject: "personal", userId: user.id, details: { reason: "missing_file" } });
     return NextResponse.json({ error: "請上傳圖片檔" }, { status: 400 });
   }
   const thumbnailFile = form.get("thumbnailFile");
 
   const char = onlyChinese(String(form.get("char") ?? "")).slice(0, 1);
   if (!char) {
+    await logUsageEvent({ eventType: "upload_failed", subject: "personal", userId: user.id, details: { reason: "missing_char" } });
     return NextResponse.json({ error: "請填寫單字" }, { status: 400 });
   }
 
@@ -27,16 +30,19 @@ export async function POST(req: NextRequest) {
   const source = String(form.get("source") ?? "personal-upload").trim();
   const license = String(form.get("license") ?? "user-submitted").trim();
   const qualityScore = Number(form.get("qualityScore") ?? 0);
+  const processingMs = Number(form.get("processingMs") ?? 0);
   const visibility = form.get("visibility") === "private" ? "private" : "public";
 
-  const storedImage = await storeGlyphImage({ file, char, author, scriptType, workTitle });
+  const storedImage = await storeGlyphImage({ file, char, author, scriptType, workTitle, isPrivate: visibility === "private" });
   if ("error" in storedImage) {
+    await logUsageEvent({ eventType: "upload_failed", subject: char, userId: user.id, details: { reason: storedImage.error } });
     return NextResponse.json({ error: storedImage.error }, { status: 400 });
   }
   const storedThumbnail = thumbnailFile instanceof File
-    ? await storeGlyphImage({ file: thumbnailFile, char, author, scriptType, workTitle })
+    ? await storeGlyphImage({ file: thumbnailFile, char, author, scriptType, workTitle, isPrivate: visibility === "private" })
     : null;
   if (storedThumbnail && "error" in storedThumbnail) {
+    await logUsageEvent({ eventType: "upload_failed", subject: char, userId: user.id, details: { reason: storedThumbnail.error } });
     return NextResponse.json({ error: storedThumbnail.error }, { status: 400 });
   }
 
@@ -63,6 +69,12 @@ export async function POST(req: NextRequest) {
   );
 
   await syncDbToBlob();
+  void logUsageEvent({
+    eventType: "upload_succeeded",
+    subject: char,
+    userId: user.id,
+    details: { visibility, processingMs: Number.isFinite(processingMs) ? processingMs : 0 },
+  });
 
   return NextResponse.json({
     id: info.lastInsertRowid,

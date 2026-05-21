@@ -1,7 +1,7 @@
 "use client";
 
-import { ChangeEvent, FormEvent, PointerEvent, useEffect, useRef, useState } from "react";
-import { Check, Copy, Eraser, Maximize2, RefreshCw, RotateCcw, Scissors, Upload, X } from "lucide-react";
+import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, PointerEvent, useEffect, useRef, useState } from "react";
+import { Check, Copy, Eraser, GripVertical, Maximize2, Minimize2, RefreshCw, RotateCcw, Scissors, Upload, X } from "lucide-react";
 
 const uploadPreviewSize = 320;
 const normalizedUploadImageSize = 1024;
@@ -52,12 +52,22 @@ type ImageBounds = { x: number; y: number; width: number; height: number };
 type UploadProcessOptions = {
   edgeSoftness: number;
   inkStrength: number;
+  foregroundSeparation: number;
+  noiseReduction: number;
 };
 
 const defaultUploadProcessOptions: UploadProcessOptions = {
   edgeSoftness: 58,
   inkStrength: 62,
+  foregroundSeparation: 58,
+  noiseReduction: 44,
 };
+const uploadQualityPresets: { label: string; options: UploadProcessOptions }[] = [
+  { label: "柔邊", options: { edgeSoftness: 78, inkStrength: 58, foregroundSeparation: 52, noiseReduction: 38 } },
+  { label: "濃墨", options: { edgeSoftness: 48, inkStrength: 86, foregroundSeparation: 60, noiseReduction: 48 } },
+  { label: "保留細節", options: { edgeSoftness: 28, inkStrength: 66, foregroundSeparation: 42, noiseReduction: 18 } },
+  { label: "印章/紅字", options: { edgeSoftness: 38, inkStrength: 92, foregroundSeparation: 70, noiseReduction: 58 } },
+];
 
 function getLuminance(red: number, green: number, blue: number) {
   return red * 0.299 + green * 0.587 + blue * 0.114;
@@ -314,10 +324,22 @@ function refineInkCanvas(
 }
 
 function buildInkLayer(pixels: Uint8ClampedArray, canvasWidth: number, canvasHeight: number, bounds: ImageBounds) {
+  return buildInkLayerWithOptions(pixels, canvasWidth, canvasHeight, bounds, defaultUploadProcessOptions);
+}
+
+function buildInkLayerWithOptions(
+  pixels: Uint8ClampedArray,
+  canvasWidth: number,
+  canvasHeight: number,
+  bounds: ImageBounds,
+  options: UploadProcessOptions = defaultUploadProcessOptions
+) {
   const backgroundLuminance = getLuminancePercentile(pixels, canvasWidth, bounds, 0.9);
   const scoreHistogram = new Array<number>(256).fill(0);
   const scores = new Uint8Array(canvasWidth * canvasHeight);
   const tones = new Uint8Array(canvasWidth * canvasHeight);
+  const separation = Math.max(0, Math.min(1, options.foregroundSeparation / 100));
+  const noiseReduction = Math.max(0, Math.min(1, options.noiseReduction / 100));
   let sampleCount = 0;
 
   for (let y = bounds.y; y < bounds.y + bounds.height; y += 1) {
@@ -333,22 +355,28 @@ function buildInkLayer(pixels: Uint8ClampedArray, canvasWidth: number, canvasHei
   }
 
   const threshold = sampleCount > 0 ? getOtsuThreshold(scoreHistogram, sampleCount) : 72;
-  const weakThreshold = Math.max(18, threshold - 46);
+  const tunedThreshold = Math.max(24, Math.min(170, threshold + Math.round((separation - 0.5) * 52)));
+  const weakThreshold = Math.max(14, tunedThreshold - Math.round(60 - separation * 34));
   const weakMask = new Uint8Array(canvasWidth * canvasHeight);
   const strongMask = new Uint8Array(canvasWidth * canvasHeight);
   for (let index = 0; index < scores.length; index += 1) {
     weakMask[index] = scores[index] >= weakThreshold ? 1 : 0;
-    strongMask[index] = scores[index] >= threshold ? 1 : 0;
+    strongMask[index] = scores[index] >= tunedThreshold ? 1 : 0;
   }
   const connectedMask = keepWeakInkConnectedToStrong(weakMask, strongMask, canvasWidth);
   const inkLayer = new Uint8Array(canvasWidth * canvasHeight);
   const softRange = 40;
   for (let index = 0; index < scores.length; index += 1) {
     if (!connectedMask[index]) continue;
-    const softness = (scores[index] - weakThreshold) / Math.max(1, threshold + softRange - weakThreshold);
+    const softness = (scores[index] - weakThreshold) / Math.max(1, tunedThreshold + softRange - weakThreshold);
     inkLayer[index] = Math.max(18, Math.min(220, Math.round(softness * 220)));
   }
-  removeSmallInkComponents(inkLayer, canvasWidth, canvasHeight, Math.max(6, Math.round(canvasWidth * canvasHeight * 0.000018)));
+  removeSmallInkComponents(
+    inkLayer,
+    canvasWidth,
+    canvasHeight,
+    Math.max(3, Math.round(canvasWidth * canvasHeight * (0.000006 + noiseReduction * 0.000036)))
+  );
   return tightenInkEdges(
     addInkToneVariation(inkLayer, stretchInkTones(tones, inkLayer), canvasWidth, canvasHeight),
     canvasWidth,
@@ -596,12 +624,12 @@ export function imageToBlackWhitePng(file: File, options: UploadProcessOptions =
 
       const imageData = ctx.getImageData(0, 0, width, height);
       const pixels = imageData.data;
-      const inkLayer = buildInkLayer(pixels, width, height, {
+      const inkLayer = buildInkLayerWithOptions(pixels, width, height, {
         x: drawX,
         y: drawY,
         width: drawWidth,
         height: drawHeight,
-      });
+      }, options);
       if (!drawTrimmedInk(canvas, ctx, inkLayer, width, height, options)) {
         for (let index = 0; index < pixels.length; index += 4) {
           const ink = inkLayer[index / 4] ? Math.max(minimumRenderedInk, inkLayer[index / 4]) : 0;
@@ -742,6 +770,7 @@ type SplitGlyphImage = {
 type BatchGlyphItem = SplitGlyphImage & {
   id: string;
   char: string;
+  cropAdjustment: number;
   status: "idle" | "uploading" | "done" | "error";
   message?: string;
 };
@@ -1188,7 +1217,8 @@ function fileFromInkBounds(
   width: number,
   height: number,
   bounds: ImageBounds,
-  fileName: string
+  fileName: string,
+  options: UploadProcessOptions = defaultUploadProcessOptions
 ) {
   return new Promise<File>((resolve, reject) => {
     const boundedInkLayer = new Uint8Array(inkLayer.length);
@@ -1200,7 +1230,7 @@ function fileFromInkBounds(
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx || !drawTrimmedInk(canvas, ctx, boundedInkLayer, width, height)) {
+    if (!ctx || !drawTrimmedInk(canvas, ctx, boundedInkLayer, width, height, options)) {
       reject(new Error("無法拆出字圖"));
       return;
     }
@@ -1215,7 +1245,11 @@ function fileFromInkBounds(
   });
 }
 
-async function splitImageToGlyphFiles(file: File, direction: BatchSplitDirection, expectedCount = 0) {
+async function buildBatchInkLayerFromFile(
+  file: File,
+  direction: BatchSplitDirection,
+  options: UploadProcessOptions = defaultUploadProcessOptions
+) {
   const objectUrl = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -1246,7 +1280,37 @@ async function splitImageToGlyphFiles(file: File, direction: BatchSplitDirection
     const inkLayer =
       direction === "ruled"
         ? buildRuledInkLayer(imageData.data, width, height, paperBounds)
-        : buildBatchInkLayer(imageData.data, width, height, paperBounds);
+        : buildInkLayerWithOptions(imageData.data, width, height, paperBounds, options);
+
+    return { imageData, inkLayer, width, height };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function adjustImageBounds(bounds: ImageBounds, width: number, height: number, adjustment: number) {
+  const scale = Math.max(0.72, Math.min(1.48, 1 + adjustment * 0.08));
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  const nextWidth = Math.max(1, Math.round(bounds.width * scale));
+  const nextHeight = Math.max(1, Math.round(bounds.height * scale));
+  const x = Math.max(0, Math.round(centerX - nextWidth / 2));
+  const y = Math.max(0, Math.round(centerY - nextHeight / 2));
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.min(width - x, nextWidth)),
+    height: Math.max(1, Math.min(height - y, nextHeight)),
+  };
+}
+
+async function splitImageToGlyphFiles(
+  file: File,
+  direction: BatchSplitDirection,
+  expectedCount = 0,
+  options: UploadProcessOptions = defaultUploadProcessOptions
+) {
+  const { imageData, inkLayer, width, height } = await buildBatchInkLayerFromFile(file, direction, options);
     const rawBounds =
       direction === "ruled"
         ? getRuledGridBounds(imageData.data, inkLayer, width, height)
@@ -1278,7 +1342,8 @@ async function splitImageToGlyphFiles(file: File, direction: BatchSplitDirection
           width,
           height,
           bounds,
-          `${fileNameWithoutExtension(file.name)}_${String(index + 1).padStart(2, "0")}.png`
+          `${fileNameWithoutExtension(file.name)}_${String(index + 1).padStart(2, "0")}.png`,
+          options
         );
         return {
           file: glyphFile,
@@ -1287,9 +1352,6 @@ async function splitImageToGlyphFiles(file: File, direction: BatchSplitDirection
         };
       })
     );
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
 }
 
 export type ReplaceGlyphTarget = {
@@ -1327,6 +1389,7 @@ export function AdminGlyphUploadForm({
   const uploadEditCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const batchEditCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const batchItemsRef = useRef<BatchGlyphItem[]>([]);
+  const batchCharInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const isErasingUploadPreviewRef = useRef(false);
   const isErasingBatchEditRef = useRef(false);
   const successToastTimerRef = useRef<number | null>(null);
@@ -1356,6 +1419,9 @@ export function AdminGlyphUploadForm({
   const [uploadFileName, setUploadFileName] = useState("");
   const [uploadEdgeSoftness, setUploadEdgeSoftness] = useState(defaultUploadProcessOptions.edgeSoftness);
   const [uploadInkStrength, setUploadInkStrength] = useState(defaultUploadProcessOptions.inkStrength);
+  const [uploadForegroundSeparation, setUploadForegroundSeparation] = useState(defaultUploadProcessOptions.foregroundSeparation);
+  const [uploadNoiseReduction, setUploadNoiseReduction] = useState(defaultUploadProcessOptions.noiseReduction);
+  const [uploadProcessingMs, setUploadProcessingMs] = useState(0);
   const [uploadEraserSize, setUploadEraserSize] = useState(44);
   const [isUploadEditing, setIsUploadEditing] = useState(false);
   const [isErasingUploadPreview, setIsErasingUploadPreview] = useState(false);
@@ -1366,6 +1432,12 @@ export function AdminGlyphUploadForm({
   const [batchExpectedCount, setBatchExpectedCount] = useState("");
   const [batchItems, setBatchItems] = useState<BatchGlyphItem[]>([]);
   const [batchFileName, setBatchFileName] = useState("");
+  const [batchOriginalPreviewUrl, setBatchOriginalPreviewUrl] = useState("");
+  const [batchQuickText, setBatchQuickText] = useState("");
+  const [batchStatusFilter, setBatchStatusFilter] = useState<"all" | "missing" | "error" | "adjusted">("all");
+  const [draggingBatchId, setDraggingBatchId] = useState<string | null>(null);
+  const [dragOverBatchId, setDragOverBatchId] = useState<string | null>(null);
+  const [dragOverBatchSide, setDragOverBatchSide] = useState<"before" | "after">("before");
   const [composingBatchCharIds, setComposingBatchCharIds] = useState<Set<string>>(() => new Set());
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isBatchUploading, setIsBatchUploading] = useState(false);
@@ -1406,6 +1478,7 @@ export function AdminGlyphUploadForm({
     uploadProcessRequestRef.current = requestId;
     setIsProcessingUploadImage(true);
     setMessage("正在轉成黑白預覽...");
+    const startedAt = performance.now();
     try {
       const nextFile = await imageToBlackWhitePng(file, options);
       if (requestId !== uploadProcessRequestRef.current) return;
@@ -1417,6 +1490,7 @@ export function AdminGlyphUploadForm({
       });
       uploadUndoStackRef.current = [];
       setUploadUndoCount(0);
+      setUploadProcessingMs(Math.round(performance.now() - startedAt));
       setMessage("");
     } catch (error) {
       if (requestId !== uploadProcessRequestRef.current) return;
@@ -1432,8 +1506,16 @@ export function AdminGlyphUploadForm({
     for (const item of batchItems) {
       URL.revokeObjectURL(item.previewUrl);
     }
+    if (batchOriginalPreviewUrl) {
+      URL.revokeObjectURL(batchOriginalPreviewUrl);
+    }
     setBatchItems([]);
     setBatchFileName("");
+    setBatchOriginalPreviewUrl("");
+    setBatchQuickText("");
+    setBatchStatusFilter("all");
+    setDraggingBatchId(null);
+    setDragOverBatchId(null);
     batchSourceFileRef.current = null;
     if (batchFileInputRef.current) {
       batchFileInputRef.current.value = "";
@@ -1459,13 +1541,15 @@ export function AdminGlyphUploadForm({
       const splitImages = await splitImageToGlyphFiles(
         file,
         batchDirection,
-        Number.isInteger(expectedCount) && expectedCount > 1 ? expectedCount : 0
+        Number.isInteger(expectedCount) && expectedCount > 1 ? expectedCount : 0,
+        currentUploadProcessOptions()
       );
       setBatchItems(
         splitImages.map((image, index) => ({
           ...image,
           id: `${Date.now()}-${index}`,
           char: "",
+          cropAdjustment: 0,
           status: "idle",
         }))
       );
@@ -1480,6 +1564,15 @@ export function AdminGlyphUploadForm({
 
   function updateBatchExpectedCount(value: string) {
     setBatchExpectedCount(value);
+  }
+
+  function currentUploadProcessOptions(): UploadProcessOptions {
+    return {
+      edgeSoftness: uploadEdgeSoftness,
+      inkStrength: uploadInkStrength,
+      foregroundSeparation: uploadForegroundSeparation,
+      noiseReduction: uploadNoiseReduction,
+    };
   }
 
   function setBatchCharComposing(id: string, isComposing: boolean) {
@@ -1497,6 +1590,76 @@ export function AdminGlyphUploadForm({
   function updateBatchChar(id: string, value: string, isComposing = false) {
     const char = isComposing ? value : onlyChinese(value).slice(0, 1);
     setBatchItems((items) => items.map((item) => (item.id === id ? { ...item, char, status: "idle", message: "" } : item)));
+  }
+
+  function updateBatchQuickText(value: string) {
+    const chars = Array.from(onlyChinese(value));
+    setBatchQuickText(value);
+    setBatchItems((items) =>
+      items.map((item, index) => ({
+        ...item,
+        char: chars[index] ?? "",
+        status: "idle",
+        message: item.status === "done" || item.status === "error" ? "" : item.message,
+      }))
+    );
+  }
+
+  function moveBatchItem(fromId: string, toId: string, side: "before" | "after" = "before") {
+    if (fromId === toId) return;
+    setBatchItems((items) => {
+      const fromIndex = items.findIndex((item) => item.id === fromId);
+      const toIndex = items.findIndex((item) => item.id === toId);
+      if (fromIndex < 0 || toIndex < 0) return items;
+      const nextItems = [...items];
+      const [movedItem] = nextItems.splice(fromIndex, 1);
+      const adjustedToIndex = nextItems.findIndex((item) => item.id === toId);
+      nextItems.splice(adjustedToIndex + (side === "after" ? 1 : 0), 0, movedItem);
+      return nextItems;
+    });
+  }
+
+  function handleBatchDragStart(event: DragEvent<HTMLElement>, id: string) {
+    setDraggingBatchId(id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+  }
+
+  function handleBatchDragOver(event: DragEvent<HTMLDivElement>, id: string) {
+    event.preventDefault();
+    if (draggingBatchId === id) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const side = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+    setDragOverBatchId(id);
+    setDragOverBatchSide(side);
+  }
+
+  function handleBatchDrop(event: DragEvent<HTMLDivElement>, id: string) {
+    event.preventDefault();
+    const draggedId = event.dataTransfer.getData("text/plain") || draggingBatchId;
+    if (draggedId) moveBatchItem(draggedId, id, dragOverBatchId === id ? dragOverBatchSide : "before");
+    setDraggingBatchId(null);
+    setDragOverBatchId(null);
+  }
+
+  function handleBatchCardKeyDown(event: KeyboardEvent<HTMLDivElement>, id: string) {
+    if (event.target instanceof HTMLInputElement || isBatchUploading || isBatchEditApplying) return;
+    const index = batchItems.findIndex((item) => item.id === id);
+    if (index < 0) return;
+
+    if ((event.key === "ArrowUp" || event.key === "ArrowLeft") && index > 0) {
+      event.preventDefault();
+      moveBatchItem(id, batchItems[index - 1].id, "before");
+    } else if ((event.key === "ArrowDown" || event.key === "ArrowRight") && index < batchItems.length - 1) {
+      event.preventDefault();
+      moveBatchItem(id, batchItems[index + 1].id, "after");
+    } else if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      removeBatchItem(id);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      batchCharInputRefs.current[id]?.focus();
+    }
   }
 
   function removeBatchItem(id: string) {
@@ -1646,6 +1809,60 @@ export function AdminGlyphUploadForm({
     }
   }
 
+  async function adjustBatchCrop(id: string, delta: number) {
+    const sourceFile = batchSourceFileRef.current;
+    const item = batchItems.find((candidate) => candidate.id === id);
+    if (!sourceFile || !item || isBatchEditApplying) return;
+
+    setIsBatchEditApplying(true);
+    setBatchItems((items) =>
+      items.map((candidate) =>
+        candidate.id === id ? { ...candidate, status: "idle", message: "重新裁切中" } : candidate
+      )
+    );
+    try {
+      const nextAdjustment = Math.max(-4, Math.min(6, item.cropAdjustment + delta));
+      const { inkLayer, width, height } = await buildBatchInkLayerFromFile(
+        sourceFile,
+        batchDirection,
+        currentUploadProcessOptions()
+      );
+      const adjustedBounds = adjustImageBounds(item.bounds, width, height, nextAdjustment);
+      const nextFile = await fileFromInkBounds(
+        inkLayer,
+        width,
+        height,
+        adjustedBounds,
+        item.file.name,
+        currentUploadProcessOptions()
+      );
+      const nextPreviewUrl = URL.createObjectURL(nextFile);
+      setBatchItems((items) =>
+        items.map((candidate) => {
+          if (candidate.id !== id) return candidate;
+          URL.revokeObjectURL(candidate.previewUrl);
+          return {
+            ...candidate,
+            file: nextFile,
+            previewUrl: nextPreviewUrl,
+            cropAdjustment: nextAdjustment,
+            status: "idle",
+            message: nextAdjustment === 0 ? "已還原裁切" : nextAdjustment > 0 ? "已放大裁切範圍" : "已縮小裁切範圍",
+          };
+        })
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "重新裁切失敗");
+      setBatchItems((items) =>
+        items.map((candidate) =>
+          candidate.id === id ? { ...candidate, status: "error", message: "重新裁切失敗" } : candidate
+        )
+      );
+    } finally {
+      setIsBatchEditApplying(false);
+    }
+  }
+
   async function handleBatchFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     clearBatchItems();
@@ -1659,6 +1876,7 @@ export function AdminGlyphUploadForm({
     }
 
     batchSourceFileRef.current = file;
+    setBatchOriginalPreviewUrl(URL.createObjectURL(file));
     await splitBatchFile(file);
   }
 
@@ -1668,10 +1886,17 @@ export function AdminGlyphUploadForm({
       setMessage("請先選擇一張多字圖片");
       return;
     }
+    const hasEditedResults = batchItems.some(
+      (item) => item.char.trim() || item.message || item.cropAdjustment !== 0 || item.status !== "idle"
+    );
+    if (hasEditedResults && !window.confirm("重拆會覆蓋目前拆字結果、單字輸入與手動調整，確定要重拆嗎？")) {
+      return;
+    }
     for (const item of batchItems) {
       URL.revokeObjectURL(item.previewUrl);
     }
     setBatchItems([]);
+    setBatchQuickText("");
     await splitBatchFile(file);
   }
 
@@ -1705,6 +1930,7 @@ export function AdminGlyphUploadForm({
         formData.set("license", uploadLicense);
         formData.set("qualityScore", uploadQualityScore);
         formData.set("visibility", uploadVisibility);
+        formData.set("processingMs", String(uploadProcessingMs));
         formData.set("file", item.file, item.file.name);
         const thumbnailFile = await imageFileToThumbnailPng(item.file, `${fileNameWithoutExtension(item.file.name)}_thumb.png`);
         formData.set("thumbnailFile", thumbnailFile, thumbnailFile.name);
@@ -1764,6 +1990,7 @@ export function AdminGlyphUploadForm({
       formData.set("license", uploadLicense);
       formData.set("qualityScore", uploadQualityScore);
       formData.set("visibility", uploadVisibility);
+      formData.set("processingMs", String(uploadProcessingMs));
       if (processedUploadFile && canvas) {
         const renderedFile = await canvasToPngFile(canvas, processedUploadFile.name);
         formData.set("file", renderedFile, renderedFile.name);
@@ -1835,11 +2062,13 @@ export function AdminGlyphUploadForm({
       void processUploadImage(uploadSourceFile, {
         edgeSoftness: uploadEdgeSoftness,
         inkStrength: uploadInkStrength,
+        foregroundSeparation: uploadForegroundSeparation,
+        noiseReduction: uploadNoiseReduction,
       });
     }, 180);
 
     return () => window.clearTimeout(timeoutId);
-  }, [uploadSourceFile, uploadEdgeSoftness, uploadInkStrength]);
+  }, [uploadSourceFile, uploadEdgeSoftness, uploadInkStrength, uploadForegroundSeparation, uploadNoiseReduction]);
 
   function getUploadPreviewPoint(e: PointerEvent<HTMLCanvasElement>) {
     const canvas = uploadEditCanvasRef.current;
@@ -2016,6 +2245,14 @@ export function AdminGlyphUploadForm({
   }, [batchItems]);
 
   useEffect(() => {
+    return () => {
+      if (batchOriginalPreviewUrl) {
+        URL.revokeObjectURL(batchOriginalPreviewUrl);
+      }
+    };
+  }, [batchOriginalPreviewUrl]);
+
+  useEffect(() => {
     if (!batchEditingId) return;
     const item = batchItems.find((candidate) => candidate.id === batchEditingId);
     const canvas = batchEditCanvasRef.current;
@@ -2045,6 +2282,82 @@ export function AdminGlyphUploadForm({
   }, []);
 
   const editingBatchItem = batchItems.find((item) => item.id === batchEditingId);
+  const batchQuickTextLength = Array.from(onlyChinese(batchQuickText)).length;
+  const batchQuickTextMessage =
+    batchQuickTextLength === 0 || batchItems.length === 0
+      ? ""
+      : batchQuickTextLength === batchItems.length
+      ? "字數剛好符合拆字結果"
+      : batchQuickTextLength > batchItems.length
+      ? `文字多 ${batchQuickTextLength - batchItems.length} 字，後面的字不會填入`
+      : `文字少 ${batchItems.length - batchQuickTextLength} 字，後面字圖會留空`;
+  const visibleBatchItems = batchItems.filter((item) => {
+    if (batchStatusFilter === "missing") return !onlyChinese(item.char).slice(0, 1);
+    if (batchStatusFilter === "error") return item.status === "error";
+    if (batchStatusFilter === "adjusted") return item.cropAdjustment !== 0 || Boolean(item.message?.includes("裁切"));
+    return true;
+  });
+  const metadataFields = (
+    <>
+      <input
+        name="author"
+        value={uploadAuthor}
+        onCompositionStart={() => setIsComposingUploadAuthor(true)}
+        onCompositionEnd={(e) => {
+          setIsComposingUploadAuthor(false);
+          setUploadAuthor(onlyChinese(e.currentTarget.value));
+        }}
+        onChange={(e) => {
+          const nativeEvent = e.nativeEvent as InputEvent;
+          setUploadAuthor(
+            isComposingUploadAuthor || nativeEvent.isComposing ? e.target.value : onlyChinese(e.target.value)
+          );
+        }}
+        placeholder="作者，例如：孫過庭"
+        disabled={isUploading || isBatchUploading}
+        className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
+        autoComplete="off"
+      />
+      <select
+        name="scriptType"
+        value={uploadScriptType}
+        onChange={(e) => setUploadScriptType(e.target.value)}
+        disabled={isUploading || isBatchUploading}
+        className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
+      >
+        <option value="">書體</option>
+        {scriptOptions.map((scriptType) => (
+          <option key={scriptType} value={scriptType}>
+            {scriptType}
+          </option>
+        ))}
+      </select>
+      <input name="workTitle" value={uploadWorkTitle} onChange={(e) => setUploadWorkTitle(e.target.value)} placeholder="作品，例如：書譜" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+      <input name="source" value={uploadSource} onChange={(e) => setUploadSource(e.target.value)} placeholder="來源，例如：local-dataset" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+      <input name="license" value={uploadLicense} onChange={(e) => setUploadLicense(e.target.value)} placeholder="授權，例如：non-commercial-research" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+      <input name="qualityScore" type="number" value={uploadQualityScore} onChange={(e) => setUploadQualityScore(e.target.value)} placeholder="品質分數(排序用)" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+    </>
+  );
+  const visibilityControl = showVisibility && !isReplacingGlyph ? (
+    <div className="grid grid-cols-2 gap-2 rounded-xl bg-stone-100 p-1">
+      {[
+        ["public", "公開"],
+        ["private", "私人"],
+      ].map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => setUploadVisibility(value as "public" | "private")}
+          disabled={isUploading || isBatchUploading}
+          className={`min-h-10 rounded-lg px-3 text-sm font-bold ${
+            uploadVisibility === value ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  ) : null;
 
   return (
     <form onSubmit={upload} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] lg:gap-5">
@@ -2109,7 +2422,11 @@ export function AdminGlyphUploadForm({
             />
           </>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 rounded-2xl border border-stone-200 bg-white p-3">
+            <div>
+              <div className="font-bold text-stone-900">圖片處理</div>
+              <div className="text-xs text-stone-500">先選擇來源圖片、拆字方向與品質，再重拆檢查結果。</div>
+            </div>
             <div className="grid grid-cols-5 gap-2">
               {[
                 ["auto", "自動"],
@@ -2143,7 +2460,62 @@ export function AdminGlyphUploadForm({
               className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 text-sm disabled:opacity-70"
             />
             {batchFileName && <div className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{batchFileName}</div>}
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            {batchOriginalPreviewUrl && (
+              <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                <div className="mb-2 text-xs font-bold text-stone-500">原圖預覽</div>
+                <div className="flex max-h-64 items-center justify-center overflow-hidden rounded-lg border border-stone-200 bg-white">
+                  <img
+                    src={batchOriginalPreviewUrl}
+                    alt={`${batchFileName || "多字圖片"} 原圖`}
+                    className="max-h-64 max-w-full object-contain p-2"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="grid gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-stone-700">拆字品質模板</span>
+                {uploadQualityPresets.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      setUploadEdgeSoftness(preset.options.edgeSoftness);
+                      setUploadInkStrength(preset.options.inkStrength);
+                      setUploadForegroundSeparation(preset.options.foregroundSeparation);
+                      setUploadNoiseReduction(preset.options.noiseReduction);
+                    }}
+                    disabled={isBatchProcessing || isBatchUploading}
+                    className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              {[
+                ["邊緣柔化", uploadEdgeSoftness, setUploadEdgeSoftness],
+                ["墨色強度", uploadInkStrength, setUploadInkStrength],
+                ["前景/背景分離", uploadForegroundSeparation, setUploadForegroundSeparation],
+                ["去雜點強度", uploadNoiseReduction, setUploadNoiseReduction],
+              ].map(([label, value, setter]) => (
+                <label key={label as string} className="grid gap-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-bold text-stone-700">{label as string}</span>
+                    <span className="text-xs tabular-nums text-stone-500">{value as number}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={value as number}
+                    onChange={(event) => (setter as (next: number) => void)(Number(event.target.value))}
+                    disabled={isBatchProcessing || isBatchUploading}
+                    className="accent-red-800"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2">
               <input
                 type="number"
                 min="2"
@@ -2152,13 +2524,13 @@ export function AdminGlyphUploadForm({
                 onChange={(e) => updateBatchExpectedCount(e.target.value)}
                 placeholder="預期字數，可留空"
                 disabled={isBatchProcessing || isBatchUploading}
-                className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
+                className="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
               />
               <button
                 type="button"
                 onClick={() => void resplitBatchFile()}
                 disabled={isBatchProcessing || isBatchUploading || !batchSourceFileRef.current}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isBatchProcessing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Scissors className="h-4 w-4" />}
                 重拆
@@ -2166,89 +2538,93 @@ export function AdminGlyphUploadForm({
             </div>
           </div>
         )}
-        <input
-          name="author"
-          value={uploadAuthor}
-          onCompositionStart={() => setIsComposingUploadAuthor(true)}
-          onCompositionEnd={(e) => {
-            setIsComposingUploadAuthor(false);
-            setUploadAuthor(onlyChinese(e.currentTarget.value));
-          }}
-          onChange={(e) => {
-            const nativeEvent = e.nativeEvent as InputEvent;
-            setUploadAuthor(
-              isComposingUploadAuthor || nativeEvent.isComposing ? e.target.value : onlyChinese(e.target.value)
-            );
-          }}
-          placeholder="作者，例如：孫過庭"
-          disabled={isUploading}
-          className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700"
-          autoComplete="off"
-        />
-        <select
-          name="scriptType"
-          value={uploadScriptType}
-          onChange={(e) => setUploadScriptType(e.target.value)}
-          disabled={isUploading}
-          className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700"
-        >
-          <option value="">書體</option>
-          {scriptOptions.map((scriptType) => (
-            <option key={scriptType} value={scriptType}>
-              {scriptType}
-            </option>
-          ))}
-        </select>
-        <input name="workTitle" value={uploadWorkTitle} onChange={(e) => setUploadWorkTitle(e.target.value)} placeholder="作品，例如：書譜" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-        <input name="source" value={uploadSource} onChange={(e) => setUploadSource(e.target.value)} placeholder="來源，例如：local-dataset" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-        <input name="license" value={uploadLicense} onChange={(e) => setUploadLicense(e.target.value)} placeholder="授權，例如：non-commercial-research" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-        <input name="qualityScore" type="number" value={uploadQualityScore} onChange={(e) => setUploadQualityScore(e.target.value)} placeholder="品質分數(排序用)" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-        {showVisibility && !isReplacingGlyph && (
-          <div className="grid grid-cols-2 gap-2 rounded-xl bg-stone-100 p-1">
-            {[
-              ["public", "公開"],
-              ["private", "私人"],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setUploadVisibility(value as "public" | "private")}
-                disabled={isUploading || isBatchUploading}
-                className={`min-h-10 rounded-lg px-3 text-sm font-bold ${
-                  uploadVisibility === value ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
-                } disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        {uploadMode === "batch" && !isReplacingGlyph ? (
-          <button
-            type="button"
-            onClick={() => void uploadBatch()}
-            disabled={isForbidden || isBatchProcessing || isBatchUploading || batchItems.length === 0}
-            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800"
-          >
-            {isBatchProcessing || isBatchUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {isBatchProcessing ? "拆字中" : isBatchUploading ? "批次上傳中" : `批次上傳 ${batchItems.length || ""}`}
-          </button>
-        ) : (
-          <button disabled={isForbidden || isUploading || isProcessingUploadImage || (!replaceGlyph && !processedUploadFile)} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800">
-            {isUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {isUploading ? (processedUploadFile ? "上傳中" : "儲存中") : isReplacingGlyph ? "儲存字圖資料" : submitLabel ?? "上傳並寫入資料庫"}
-          </button>
+        {(uploadMode === "single" || isReplacingGlyph) && (
+          <>
+            {metadataFields}
+            {visibilityControl}
+            <button disabled={isForbidden || isUploading || isProcessingUploadImage || (!replaceGlyph && !processedUploadFile)} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800">
+              {isUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {isUploading ? (processedUploadFile ? "上傳中" : "儲存中") : isReplacingGlyph ? "儲存字圖資料" : submitLabel ?? "上傳並寫入資料庫"}
+            </button>
+          </>
         )}
         {message && <div className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{message}</div>}
       </div>
 
       <div className="space-y-3">
         {uploadMode === "batch" && !isReplacingGlyph ? (
+          <>
+          <div className="rounded-2xl border border-stone-200 bg-white p-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <div className="font-bold text-stone-900">字圖資料</div>
+                <div className="text-xs text-stone-500">這些資料會套用到本次批次上傳的所有字圖。</div>
+              </div>
+              <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-600">
+                {batchItems.length ? `${batchItems.length} 個字` : "尚未拆字"}
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {metadataFields}
+            </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              {visibilityControl}
+              <button
+                type="button"
+                onClick={() => void uploadBatch()}
+                disabled={isForbidden || isBatchProcessing || isBatchUploading || batchItems.length === 0}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800"
+              >
+                {isBatchProcessing || isBatchUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {isBatchProcessing ? "拆字中" : isBatchUploading ? "批次上傳中" : `批次上傳 ${batchItems.length || ""}`}
+              </button>
+            </div>
+          </div>
           <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-xs text-stone-500">
               <span className="truncate">拆字結果</span>
               <span className="shrink-0">{batchItems.length ? `${batchItems.length} 個字` : "等待圖片"}</span>
             </div>
+            {batchItems.length > 0 && (
+              <div className="mb-3 rounded-xl border border-stone-200 bg-white p-2">
+                <input
+                  value={batchQuickText}
+                  onChange={(event) => updateBatchQuickText(event.target.value)}
+                  placeholder="整段文字，例如：小橋流水人家"
+                  disabled={isBatchUploading}
+                  className="min-h-11 w-full rounded-lg border border-stone-300 bg-stone-50 px-3 text-sm outline-none focus:border-red-700 disabled:opacity-70"
+                  autoComplete="off"
+                />
+                {batchQuickTextMessage && (
+                  <div className={`mt-2 text-xs font-bold ${
+                    batchQuickTextLength === batchItems.length ? "text-emerald-700" : "text-amber-700"
+                  }`}>
+                    {batchQuickTextMessage}
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[
+                    ["all", "全部"],
+                    ["missing", "未填字"],
+                    ["error", "上傳失敗"],
+                    ["adjusted", "已調整"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setBatchStatusFilter(value as "all" | "missing" | "error" | "adjusted")}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
+                        batchStatusFilter === value
+                          ? "bg-red-800 text-white"
+                          : "border border-stone-300 bg-white text-stone-600 hover:border-red-700 hover:text-red-800"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {isBatchProcessing ? (
               <div className="flex aspect-square w-full items-center justify-center rounded-xl border border-stone-200 bg-white text-sm text-stone-500">
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -2256,16 +2632,90 @@ export function AdminGlyphUploadForm({
               </div>
             ) : batchItems.length ? (
               <div className="grid max-h-[680px] grid-cols-2 gap-3 overflow-auto pr-1 sm:grid-cols-3 lg:grid-cols-2">
-                {batchItems.map((item, index) => (
-                  <div key={item.id} className="rounded-xl border border-stone-200 bg-white p-2">
-                    <div className="mb-2 flex items-center justify-between gap-2 text-xs text-stone-500">
-                      <span>#{index + 1}</span>
-                      <div className="flex items-center gap-1">
+                {visibleBatchItems.map((item) => {
+                  const index = batchItems.findIndex((candidate) => candidate.id === item.id);
+                  return (
+                  <div
+                    key={item.id}
+                    tabIndex={0}
+                    onKeyDown={(event) => handleBatchCardKeyDown(event, item.id)}
+                    onDragOver={(event) => handleBatchDragOver(event, item.id)}
+                    onDragLeave={() => {
+                      if (dragOverBatchId === item.id) setDragOverBatchId(null);
+                    }}
+                    onDrop={(event) => handleBatchDrop(event, item.id)}
+                    className={`relative rounded-xl border bg-white p-2 transition ${
+                      draggingBatchId === item.id
+                        ? "border-red-700 opacity-70"
+                        : dragOverBatchId === item.id
+                        ? "border-red-700 bg-red-50 shadow-[0_0_0_3px_rgba(185,28,28,0.12)]"
+                        : "border-stone-200"
+                    }`}
+                  >
+                    {dragOverBatchId === item.id && draggingBatchId !== item.id && (
+                      <div
+                        className={`pointer-events-none absolute left-2 right-2 z-10 h-1 rounded-full bg-red-700 shadow-[0_0_0_3px_rgba(185,28,28,0.16)] ${
+                          dragOverBatchSide === "before" ? "-top-1" : "-bottom-1"
+                        }`}
+                      />
+                    )}
+                    <div className="mb-2 grid gap-2 text-xs text-stone-500">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            draggable={!isBatchUploading && !isBatchEditApplying}
+                            onDragStart={(event) => handleBatchDragStart(event, item.id)}
+                            onDragEnd={() => {
+                              setDraggingBatchId(null);
+                              setDragOverBatchId(null);
+                            }}
+                            disabled={isBatchUploading || isBatchEditApplying}
+                            className="inline-flex h-7 w-7 cursor-grab items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`拖曳排序第 ${index + 1} 個字`}
+                            title="拖曳排序"
+                          >
+                            <GripVertical className="h-4 w-4" />
+                          </button>
+                          <span>#{index + 1}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeBatchItem(item.id)}
+                          disabled={isBatchUploading || isBatchEditApplying}
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`移除第 ${index + 1} 個字`}
+                          title="移除"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => void adjustBatchCrop(item.id, -1)}
+                          disabled={isBatchUploading || isBatchEditApplying || item.cropAdjustment <= -4}
+                          className="inline-flex h-8 min-w-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`縮小第 ${index + 1} 個字的裁切範圍`}
+                          title="縮小裁切範圍"
+                        >
+                          <Minimize2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void adjustBatchCrop(item.id, 1)}
+                          disabled={isBatchUploading || isBatchEditApplying || item.cropAdjustment >= 6}
+                          className="inline-flex h-8 min-w-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`放大第 ${index + 1} 個字的裁切範圍`}
+                          title="放大裁切範圍"
+                        >
+                          <Maximize2 className="h-4 w-4" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => void copyBatchItem(item.id)}
                           disabled={isBatchUploading || isBatchEditApplying}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex h-8 min-w-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={`複製第 ${index + 1} 個字`}
                           title="複製"
                         >
@@ -2275,7 +2725,7 @@ export function AdminGlyphUploadForm({
                           type="button"
                           onClick={() => (batchEditingId === item.id ? cancelBatchEdit() : startBatchEdit(item.id))}
                           disabled={isBatchUploading || isBatchEditApplying}
-                          className={`inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40 ${
+                          className={`inline-flex h-8 min-w-0 items-center justify-center rounded-lg hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40 ${
                             batchEditingId === item.id ? "text-red-800" : "text-stone-500 hover:text-red-800"
                           }`}
                           aria-label={`擦除第 ${index + 1} 個字`}
@@ -2283,22 +2733,15 @@ export function AdminGlyphUploadForm({
                         >
                           <Eraser className="h-4 w-4" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => removeBatchItem(item.id)}
-                          disabled={isBatchUploading || isBatchEditApplying}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
-                          aria-label={`移除第 ${index + 1} 個字`}
-                          title="移除"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
                       </div>
                     </div>
                     <div className="mb-2 flex aspect-square items-center justify-center rounded-lg border border-stone-100 bg-white">
                       <img src={item.previewUrl} alt={`拆出的第 ${index + 1} 個字`} className="max-h-full max-w-full object-contain p-2" />
                     </div>
                     <input
+                      ref={(node) => {
+                        batchCharInputRefs.current[item.id] = node;
+                      }}
                       value={item.char}
                       onCompositionStart={() => setBatchCharComposing(item.id, true)}
                       onCompositionEnd={(e) => {
@@ -2324,7 +2767,13 @@ export function AdminGlyphUploadForm({
                       </div>
                     )}
                   </div>
-                ))}
+                );
+                })}
+                {visibleBatchItems.length === 0 && (
+                  <div className="col-span-full rounded-xl border border-dashed border-stone-300 bg-white p-6 text-center text-sm text-stone-500">
+                    目前沒有符合篩選的拆字結果。
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex aspect-square w-full items-center justify-center rounded-xl border border-stone-200 bg-white px-4 text-center text-sm text-stone-500">
@@ -2332,6 +2781,7 @@ export function AdminGlyphUploadForm({
               </div>
             )}
           </div>
+          </>
         ) : (
           <>
             {replaceGlyph?.imageUrl && (
@@ -2409,6 +2859,25 @@ export function AdminGlyphUploadForm({
               </div>
               {uploadOriginalPreviewUrl && (
                 <div className="mt-3 grid gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-stone-700">品質模板</span>
+                    {uploadQualityPresets.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          setUploadEdgeSoftness(preset.options.edgeSoftness);
+                          setUploadInkStrength(preset.options.inkStrength);
+                          setUploadForegroundSeparation(preset.options.foregroundSeparation);
+                          setUploadNoiseReduction(preset.options.noiseReduction);
+                        }}
+                        disabled={isUploading || isProcessingUploadImage || isUploadEditing}
+                        className="rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
                   <label className="grid gap-1">
                     <div className="flex items-center justify-between gap-3">
                       <span className="font-bold text-stone-700">邊緣柔化</span>
@@ -2420,6 +2889,36 @@ export function AdminGlyphUploadForm({
                       max="100"
                       value={uploadEdgeSoftness}
                       onChange={(event) => setUploadEdgeSoftness(Number(event.target.value))}
+                      disabled={isUploading || isProcessingUploadImage || isUploadEditing}
+                      className="accent-red-800"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-bold text-stone-700">前景/背景分離</span>
+                      <span className="text-xs tabular-nums text-stone-500">{uploadForegroundSeparation}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={uploadForegroundSeparation}
+                      onChange={(event) => setUploadForegroundSeparation(Number(event.target.value))}
+                      disabled={isUploading || isProcessingUploadImage || isUploadEditing}
+                      className="accent-red-800"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-bold text-stone-700">去雜點強度</span>
+                      <span className="text-xs tabular-nums text-stone-500">{uploadNoiseReduction}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={uploadNoiseReduction}
+                      onChange={(event) => setUploadNoiseReduction(Number(event.target.value))}
                       disabled={isUploading || isProcessingUploadImage || isUploadEditing}
                       className="accent-red-800"
                     />

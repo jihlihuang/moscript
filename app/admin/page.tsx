@@ -11,6 +11,12 @@ type Stats = {
   totalChars: number;
   totalCollections: number;
   scripts: { label: string; count: number }[];
+  observability?: {
+    searchCount: number;
+    popularSearchChars: { subject: string; count: number }[];
+    uploadFailures: { details: string | null; count: number }[];
+    uploadProcessing: { count: number; avgMs: number | null; maxMs: number | null };
+  };
 };
 
 type GlyphDto = GlyphLike & {
@@ -52,6 +58,16 @@ function sortScriptLabels(labels: string[]) {
   }
 
   return [...labels].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, "zh-Hant"));
+}
+
+function uploadFailureLabel(details: string | null) {
+  if (!details) return "未知原因";
+  try {
+    const parsed = JSON.parse(details) as { reason?: string };
+    return parsed.reason || details;
+  } catch {
+    return details;
+  }
 }
 
 export default function AdminPage() {
@@ -319,6 +335,51 @@ export default function AdminPage() {
               <div className="text-stone-500">無法讀取資料庫狀態</div>
             )}
           </section>
+
+          {stats?.observability && (
+            <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:rounded-3xl sm:p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Search className="h-5 w-5 text-red-600" />
+                <h2 className="text-lg font-bold sm:text-xl">使用觀測</h2>
+              </div>
+              <div className="grid gap-3">
+                <div className="rounded-2xl bg-stone-50 p-3">
+                  <div className="text-xs text-stone-500">搜尋次數</div>
+                  <div className="text-2xl font-bold">{stats.observability.searchCount}</div>
+                </div>
+                <div className="rounded-2xl bg-stone-50 p-3">
+                  <div className="mb-2 text-sm font-bold text-stone-700">熱門搜尋</div>
+                  <div className="space-y-1">
+                    {stats.observability.popularSearchChars.slice(0, 6).map((item) => (
+                      <div key={item.subject} className="flex justify-between text-sm">
+                        <span className="truncate">{item.subject}</span>
+                        <span className="text-stone-500">{item.count}</span>
+                      </div>
+                    ))}
+                    {stats.observability.popularSearchChars.length === 0 && <div className="text-sm text-stone-500">尚無資料</div>}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-stone-50 p-3">
+                  <div className="mb-2 text-sm font-bold text-stone-700">上傳失敗原因</div>
+                  <div className="space-y-1">
+                    {stats.observability.uploadFailures.slice(0, 5).map((item, index) => (
+                      <div key={`${item.details}-${index}`} className="flex justify-between gap-3 text-sm">
+                        <span className="truncate">{uploadFailureLabel(item.details)}</span>
+                        <span className="text-stone-500">{item.count}</span>
+                      </div>
+                    ))}
+                    {stats.observability.uploadFailures.length === 0 && <div className="text-sm text-stone-500">尚無失敗紀錄</div>}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-stone-50 p-3 text-sm">
+                  <div className="font-bold text-stone-700">圖片處理時間</div>
+                  <div className="mt-1 text-stone-600">
+                    平均 {Math.round(stats.observability.uploadProcessing.avgMs ?? 0)}ms｜最高 {Math.round(stats.observability.uploadProcessing.maxMs ?? 0)}ms
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section className="rounded-2xl border border-stone-200 bg-white p-4 sm:rounded-3xl sm:p-5">
             <div className="mb-4 flex items-center gap-2">

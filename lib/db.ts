@@ -157,6 +157,19 @@ export function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_user_id ON admin_audit_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_action ON admin_audit_logs(action);
     CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at ON admin_audit_logs(created_at);
+
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      subject TEXT,
+      details TEXT,
+      user_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_events_event_type ON usage_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_subject ON usage_events(subject);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_at);
   `);
 
   const collectionColumns = db.prepare("PRAGMA table_info(collections)").all() as { name: string }[];
@@ -195,4 +208,54 @@ export function initSchema(db: Database.Database) {
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_owner_user_id ON glyphs(owner_user_id)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_visibility ON glyphs(visibility)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_collection_items_glyph_id ON collection_items(glyph_id)").run();
+  migrateLocalPrivateGlyphFiles(db);
+}
+
+function migrateLocalPrivateGlyphFiles(db: Database.Database) {
+  if (hasBlobConfig()) return;
+
+  const rows = db.prepare(`
+    SELECT id, image_url, thumbnail_url
+    FROM glyphs
+    WHERE visibility = 'private'
+      AND owner_user_id IS NOT NULL
+      AND (image_url LIKE '/glyphs/%' OR thumbnail_url LIKE '/glyphs/%')
+  `).all() as { id: number; image_url: string; thumbnail_url: string | null }[];
+  if (rows.length === 0) return;
+
+  const publicRoot = path.join(process.cwd(), "public");
+  const privateRoot = path.join(process.cwd(), "data", "private-glyphs");
+
+  function moveUrl(url: string | null) {
+    if (!url?.startsWith("/glyphs/")) return url;
+    const parts = url
+      .replace(/^\/glyphs\/?/, "")
+      .split("/")
+      .filter(Boolean)
+      .map((part) => decodeURIComponent(part));
+    if (parts.length < 2) return url;
+
+    const sourcePath = path.join(publicRoot, "glyphs", ...parts);
+    const targetPath = path.join(privateRoot, ...parts);
+    const sourceRelative = path.relative(publicRoot, sourcePath);
+    const targetRelative = path.relative(privateRoot, targetPath);
+    if (sourceRelative.startsWith("..") || path.isAbsolute(sourceRelative) || targetRelative.startsWith("..") || path.isAbsolute(targetRelative)) {
+      return url;
+    }
+
+    try {
+      if (fs.existsSync(sourcePath)) {
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        fs.renameSync(sourcePath, targetPath);
+      }
+      return `/private-glyphs/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
+    } catch {
+      return url;
+    }
+  }
+
+  const update = db.prepare("UPDATE glyphs SET image_url = ?, thumbnail_url = ? WHERE id = ?");
+  for (const row of rows) {
+    update.run(moveUrl(row.image_url), moveUrl(row.thumbnail_url), row.id);
+  }
 }

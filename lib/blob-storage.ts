@@ -2,6 +2,7 @@ import path from "path";
 import { BlobServiceClient, type BlockBlobClient, type ContainerClient } from "@azure/storage-blob";
 
 export const glyphsPrefix = (process.env.MOSCRIPT_GLYPHS_PREFIX || "glyphs").replace(/^\/+|\/+$/g, "");
+export const privateGlyphsPrefix = (process.env.MOSCRIPT_PRIVATE_GLYPHS_PREFIX || "private-glyphs").replace(/^\/+|\/+$/g, "");
 
 export function hasBlobConfig() {
   return Boolean(
@@ -50,14 +51,14 @@ export async function deleteBlobIfExists(blobName: string) {
   await container.getBlockBlobClient(blobName).deleteIfExists();
 }
 
-export function glyphBlobName(char: string, fileName: string) {
-  return path.posix.join(glyphsPrefix, char, fileName);
+export function glyphBlobName(char: string, fileName: string, isPrivate = false) {
+  return path.posix.join(isPrivate ? privateGlyphsPrefix : glyphsPrefix, char, fileName);
 }
 
-export function glyphBlobNameFromPath(parts: string[]) {
-  return path.posix.join(glyphsPrefix, ...parts);
+export function glyphBlobNameFromPath(parts: string[], isPrivate = false) {
+  return path.posix.join(isPrivate ? privateGlyphsPrefix : glyphsPrefix, ...parts);
 }
 
-export function glyphImageUrl(char: string, fileName: string) {
-  return `/glyphs/${encodeURIComponent(char)}/${encodeURIComponent(fileName)}`;
+export function glyphImageUrl(char: string, fileName: string, isPrivate = false) {
+  return `/${isPrivate ? "private-glyphs" : "glyphs"}/${encodeURIComponent(char)}/${encodeURIComponent(fileName)}`;
 }

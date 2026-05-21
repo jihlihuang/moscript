@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { groupGlyphsByChar, searchGlyphs } from "@/lib/glyphs";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
+import { logUsageEvent } from "@/lib/usage-log";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   const params = req.nextUrl.searchParams;
   const q = params.get("q") ?? "";
   const author = params.get("author") ?? "";
@@ -14,6 +16,10 @@ export async function GET(req: NextRequest) {
   const char = params.get("char") ?? "";
   const perCharParam = params.get("perChar");
   const perChar = perCharParam ? Number(perCharParam) : undefined;
+  const limitParam = params.get("limit");
+  const offsetParam = params.get("offset");
+  const limit = limitParam ? Number(limitParam) : undefined;
+  const offset = offsetParam ? Number(offsetParam) : undefined;
   const includePersonal = params.get("includePersonal") === "1";
   const includeAllPersonal = params.get("includeAllPersonal") === "1";
   const resultScopeParam = params.get("resultScope");
@@ -27,6 +33,8 @@ export async function GET(req: NextRequest) {
     scriptType,
     scriptTypes,
     perChar,
+    limit: limit ? limit + 1 : undefined,
+    offset,
     includePersonal,
     includeAllPersonal: Boolean(includeAllPersonal && user && isAdminAllowed(user)),
     userId: user?.id ?? null,
@@ -39,13 +47,40 @@ export async function GET(req: NextRequest) {
         ? sortParam
         : "popular",
   });
+  const visibleGlyphs = limit ? glyphs.slice(0, limit) : glyphs;
   const chars = [...new Set(Array.from(q || char).filter((c) => c.trim() !== ""))];
+  const grouped = groupGlyphsByChar(visibleGlyphs);
+  const hasMoreByChar = Object.fromEntries(
+    chars.map((resultChar) => [
+      resultChar,
+      limit && char === resultChar
+        ? glyphs.length > limit
+        : perChar
+        ? (grouped[resultChar]?.length ?? 0) >= perChar
+        : false,
+    ])
+  );
+
+  void logUsageEvent({
+    eventType: "search",
+    subject: q || char || null,
+    userId: user?.id ?? null,
+    details: {
+      q,
+      char,
+      resultScope: resultScopeParam ?? "library",
+      sort: sortParam ?? "popular",
+      resultCount: visibleGlyphs.length,
+      durationMs: Date.now() - startedAt,
+    },
+  });
 
   return NextResponse.json({
     query: q,
     chars,
-    results: groupGlyphsByChar(glyphs),
-    total: glyphs.length,
+    results: grouped,
+    total: visibleGlyphs.length,
+    hasMoreByChar,
   });
 }
 

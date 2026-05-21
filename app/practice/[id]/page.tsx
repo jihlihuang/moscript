@@ -7,6 +7,7 @@ import { LogoMark } from "@/components/LogoMark";
 import { GlyphPracticeCanvas } from "@/components/GlyphPracticeCanvas";
 import { type GlyphLike } from "@/components/GlyphImage";
 import { GlyphLikeButton } from "@/components/GlyphLikeButton";
+import { canAccessGlyph, glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
 type Params = {
@@ -22,6 +23,8 @@ type GlyphRow = {
   work_title: string | null;
   image_url: string;
   thumbnail_url: string | null;
+  owner_user_id: string | null;
+  visibility: string | null;
   like_count: number;
   collection_count: number;
   liked_by_me: number;
@@ -47,6 +50,8 @@ export default async function PracticePage({ params, searchParams }: Params) {
       g.work_title,
       g.image_url,
       g.thumbnail_url,
+      g.owner_user_id,
+      g.visibility,
       ${glyphStatsSelectSql()}
     FROM glyphs g
     ${glyphStatsJoinSql("g")}
@@ -54,6 +59,7 @@ export default async function PracticePage({ params, searchParams }: Params) {
   `).get(user?.id ?? "", id) as GlyphRow | undefined;
 
   if (!row) notFound();
+  if (!canAccessGlyph(row, user)) notFound();
 
   const collectionId = Number(query?.collectionId);
   const currentPosition = Number(query?.position);
@@ -76,7 +82,7 @@ export default async function PracticePage({ params, searchParams }: Params) {
   const glyph: GlyphLike = {
     id: row.id,
     char: row.char,
-    imageUrl: row.image_url,
+    imageUrl: glyphImageUrlForAccess(row, "image") ?? row.image_url,
     thumbnailUrl: null,
     author: row.author,
     scriptType: row.script_type,

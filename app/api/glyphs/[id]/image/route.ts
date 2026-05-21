@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, type GlyphRow, syncDbToBlob } from "@/lib/db";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
+import { canAccessGlyph } from "@/lib/glyph-access";
 import { deleteGlyphImageByUrl, onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
 
 export const runtime = "nodejs";
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
   const isOwner = glyph.owner_user_id === user.id;
   const isAdmin = isAdminAllowed(user);
+  if (!canAccessGlyph(glyph, user)) return NextResponse.json({ error: "找不到字圖" }, { status: 404 });
   if (!isAdmin && !isOwner) return forbidden();
 
   const form = await req.formData();
@@ -39,12 +41,13 @@ export async function POST(req: NextRequest, { params }: Params) {
   const source = String(form.get("source") ?? glyph.source ?? "").trim();
   const license = String(form.get("license") ?? glyph.license ?? "").trim();
   const qualityScore = Number(form.get("qualityScore") ?? glyph.quality_score ?? 0);
-  const storedImage = hasNewImage ? await storeGlyphImage({ file, char, author, scriptType, workTitle }) : null;
+  const isPrivate = Boolean(glyph.owner_user_id && glyph.visibility === "private");
+  const storedImage = hasNewImage ? await storeGlyphImage({ file, char, author, scriptType, workTitle, isPrivate }) : null;
   if (storedImage && "error" in storedImage) {
     return NextResponse.json({ error: storedImage.error }, { status: 400 });
   }
   const storedThumbnail = hasNewImage && thumbnailFile instanceof File
-    ? await storeGlyphImage({ file: thumbnailFile, char, author, scriptType, workTitle })
+    ? await storeGlyphImage({ file: thumbnailFile, char, author, scriptType, workTitle, isPrivate })
     : null;
   if (storedThumbnail && "error" in storedThumbnail) {
     return NextResponse.json({ error: storedThumbnail.error }, { status: 400 });

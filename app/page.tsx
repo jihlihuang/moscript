@@ -23,6 +23,7 @@ type ApiResult = {
   chars: string[];
   results: Record<string, GlyphDto[]>;
   total: number;
+  hasMoreByChar?: Record<string, boolean>;
 };
 
 type SelectedGlyph = GlyphDto & {
@@ -82,11 +83,14 @@ export default function FrontStagePage() {
   const [q, setQ] = useState("");
   const [isComposingQuery, setIsComposingQuery] = useState(false);
   const [author, setAuthor] = useState("");
+  const [collectionTitle, setCollectionTitle] = useState("");
+  const [editingCollectionId, setEditingCollectionId] = useState<number | null>(null);
   const [selectedScriptTypes, setSelectedScriptTypes] = useState<string[]>([]);
   const [availableScripts, setAvailableScripts] = useState<string[]>([]);
   const [resultScope, setResultScope] = useState<ResultScope>("library");
   const [resultSort, setResultSort] = useState<ResultSort>("popular");
   const [data, setData] = useState<ApiResult | null>(null);
+  const [loadingMoreChars, setLoadingMoreChars] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<SelectedGlyph[]>([]);
   const [activePosition, setActivePosition] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,6 +102,9 @@ export default function FrontStagePage() {
   const [logoClickCount, setLogoClickCount] = useState(0);
   const pendingSaveStartedRef = useRef(false);
   const collectionLoadStartedRef = useRef(false);
+  const initialGlyphLoadStartedRef = useRef(false);
+  const loadMoreSentinelRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const loadingMoreCharsRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -169,6 +176,14 @@ export default function FrontStagePage() {
         url: message.replace("已存在：", ""),
         title: "這份集字作品已存在",
         description: "系統找到相同文字與相同字圖選擇，已為你保留原本那一筆。",
+      };
+    }
+    if (message.startsWith("已更新：")) {
+      return {
+        type: "saved" as const,
+        url: message.replace("已更新：", ""),
+        title: "集字作品已更新",
+        description: "已把目前文字與字圖選擇更新到原本的集字作品。",
       };
     }
     return null;
@@ -248,6 +263,47 @@ export default function FrontStagePage() {
   }, [isAuthChecked, user]);
 
   useEffect(() => {
+    if (!isAuthChecked || collectionLoadStartedRef.current || initialGlyphLoadStartedRef.current) return;
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("collectionId")) return;
+    const addGlyphId = url.searchParams.get("addGlyphId");
+    const initialQ = onlyChinese(url.searchParams.get("q") ?? "");
+    if (!addGlyphId && !initialQ) return;
+
+    initialGlyphLoadStartedRef.current = true;
+    async function loadInitialGlyph() {
+      let nextQ = initialQ;
+      let glyphToSelect: GlyphDto | null = null;
+      if (addGlyphId) {
+        const res = await fetch(`/api/glyphs/${addGlyphId}`);
+        if (res.ok) {
+          glyphToSelect = (await res.json()) as GlyphDto;
+          nextQ = nextQ || glyphToSelect.char;
+          if (!Array.from(nextQ).includes(glyphToSelect.char)) {
+            nextQ += glyphToSelect.char;
+          }
+        }
+      }
+      if (!nextQ) return;
+      setQ(nextQ);
+      setCollectionTitle((current) => current || nextQ);
+      await searchGlyphs(selectedScriptTypes, true, nextQ);
+      if (glyphToSelect) {
+        const chars = Array.from(onlyChinese(nextQ));
+        const position = Math.max(0, chars.findIndex((char) => char === glyphToSelect?.char));
+        setSelected([{ ...glyphToSelect, position }]);
+        setActivePosition(position);
+        setMessage(`已加入「${glyphToSelect.char}」到目前集字`);
+      }
+      url.searchParams.delete("addGlyphId");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+
+    void loadInitialGlyph();
+  }, [isAuthChecked]);
+
+  useEffect(() => {
     async function loadAvailableScripts() {
       if (queryChars.length === 0) {
         setAvailableScripts([]);
@@ -285,17 +341,85 @@ export default function FrontStagePage() {
 
     setLoading(true);
     setMessage("");
+    setLoadingMoreChars({});
+    loadMoreSentinelRefs.current = {};
+    loadingMoreCharsRef.current = {};
     const params = new URLSearchParams({ q: cleanedQ });
     if (author) params.set("author", author);
     nextScriptTypes.forEach((script) => params.append("scriptTypes", script));
     params.set("resultScope", nextResultScope);
     params.set("sort", nextResultSort);
+    params.set("perChar", "24");
 
     const res = await fetch(`/api/glyphs?${params.toString()}`);
     const json = (await res.json()) as ApiResult;
     setData(json);
     setLoading(false);
   }
+
+  function buildSearchParamsForChar(char: string, offset: number) {
+    const params = new URLSearchParams({ char, limit: "24", offset: String(offset) });
+    if (author) params.set("author", author);
+    selectedScriptTypes.forEach((script) => params.append("scriptTypes", script));
+    params.set("resultScope", resultScope);
+    params.set("sort", resultSort);
+    return params;
+  }
+
+  async function loadMoreForChar(char: string) {
+    if (!data || loadingMoreCharsRef.current[char]) return;
+    const offset = data.results[char]?.length ?? 0;
+    loadingMoreCharsRef.current = { ...loadingMoreCharsRef.current, [char]: true };
+    setLoadingMoreChars((current) => ({ ...current, [char]: true }));
+    try {
+      const res = await fetch(`/api/glyphs?${buildSearchParamsForChar(char, offset).toString()}`);
+      const json = (await res.json()) as ApiResult;
+      const nextGlyphs = json.results[char] ?? [];
+      setData((current) => {
+        if (!current) return current;
+        const existing = current.results[char] ?? [];
+        const existingIds = new Set(existing.map((glyph) => glyph.id));
+        const merged = [...existing, ...nextGlyphs.filter((glyph) => !existingIds.has(glyph.id))];
+        return {
+          ...current,
+          results: { ...current.results, [char]: merged },
+          total: current.total + merged.length - existing.length,
+          hasMoreByChar: {
+            ...(current.hasMoreByChar ?? {}),
+            [char]: Boolean(json.hasMoreByChar?.[char]),
+          },
+        };
+      });
+    } finally {
+      loadingMoreCharsRef.current = { ...loadingMoreCharsRef.current, [char]: false };
+      setLoadingMoreChars((current) => ({ ...current, [char]: false }));
+    }
+  }
+
+  useEffect(() => {
+    if (!data || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const char = entry.target.getAttribute("data-char");
+          if (!char || !data.hasMoreByChar?.[char] || loadingMoreCharsRef.current[char]) continue;
+          void loadMoreForChar(char);
+        }
+      },
+      { rootMargin: "520px 0px" }
+    );
+
+    for (const { char } of visibleChars) {
+      const node = loadMoreSentinelRefs.current[char];
+      if (node && data.hasMoreByChar?.[char]) {
+        observer.observe(node);
+      }
+    }
+
+    return () => observer.disconnect();
+  }, [data, loadingMoreChars, visibleChars]);
 
   function pickGlyph(glyph: GlyphDto, position: number) {
     setSelected((prev) => {
@@ -325,6 +449,21 @@ export default function FrontStagePage() {
     setSelected((items) => items.map(patchGlyph));
   }
 
+  useEffect(() => {
+    function handleGlyphLikeUpdate(event: Event) {
+      const detail = (event as CustomEvent<{ glyphId: number; liked: boolean; likeCount: number; collectionCount: number }>).detail;
+      if (!detail) return;
+      updateGlyphLike(detail.glyphId, {
+        liked: detail.liked,
+        likeCount: detail.likeCount,
+        collectionCount: detail.collectionCount,
+      });
+    }
+
+    window.addEventListener("moscript:glyph-like-updated", handleGlyphLikeUpdate);
+    return () => window.removeEventListener("moscript:glyph-like-updated", handleGlyphLikeUpdate);
+  }, []);
+
   function removeSelected(position: number) {
     setSelected((prev) => prev.filter((item) => item.position !== position));
   }
@@ -338,6 +477,7 @@ export default function FrontStagePage() {
 
   function restoreWorkspaceFromPayload(payload: CollectionSavePayload) {
     setQ(payload.text);
+    setCollectionTitle(payload.title || payload.text);
     setAuthor(payload.author ?? "");
     setSelectedScriptTypes(payload.scriptType ? payload.scriptType.split(",").map((script) => script.trim()).filter(Boolean) : []);
     setSelected(payload.selectedGlyphs ?? []);
@@ -378,6 +518,8 @@ export default function FrontStagePage() {
       }));
       const loadedScriptType = selectedGlyphs[0]?.scriptType ?? "";
       setQ(json.collection.text);
+      setCollectionTitle(json.collection.title || json.collection.text);
+      setEditingCollectionId(Number(json.collection.id));
       setAuthor("");
       setSelectedScriptTypes(loadedScriptType ? [loadedScriptType] : []);
       setSelected(selectedGlyphs);
@@ -402,12 +544,13 @@ export default function FrontStagePage() {
 
   async function saveCollectionPayload(
     payload: CollectionSavePayload,
-    options: { clearPendingOnSuccess?: boolean } = {}
+    options: { clearPendingOnSuccess?: boolean; collectionId?: number | null } = {}
   ) {
     setIsSavingCollection(true);
     try {
-      const res = await fetch("/api/collections", {
-        method: "POST",
+      const isUpdate = Boolean(options.collectionId);
+      const res = await fetch(isUpdate ? `/api/collections/${options.collectionId}` : "/api/collections", {
+        method: isUpdate ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -426,7 +569,7 @@ export default function FrontStagePage() {
       if (options.clearPendingOnSuccess) {
         localStorage.removeItem(pendingCollectionKey);
       }
-      setMessage(json.duplicate ? `已存在：${json.url}` : `已儲存：${json.url}`);
+      setMessage(isUpdate ? `已更新：${json.url}` : json.duplicate ? `已存在：${json.url}` : `已儲存：${json.url}`);
     } finally {
       setIsSavingCollection(false);
     }
@@ -435,7 +578,7 @@ export default function FrontStagePage() {
   async function saveCollection() {
     if (isSavingCollection) return;
     const payload: CollectionSavePayload = {
-      title: q,
+      title: collectionTitle.trim() || q,
       text: q,
       author,
       scriptType: selectedScriptTypes.join(","),
@@ -456,6 +599,24 @@ export default function FrontStagePage() {
     }
 
     await saveCollectionPayload(payload);
+  }
+
+  async function updateLoadedCollection() {
+    if (!editingCollectionId || isSavingCollection) return;
+    const payload: CollectionSavePayload = {
+      title: collectionTitle.trim() || q,
+      text: q,
+      author,
+      scriptType: selectedScriptTypes.join(","),
+      selectedGlyphs: selected,
+      items: selected.map((item) => ({
+        glyphId: item.id,
+        char: item.char,
+        position: item.position,
+      })),
+    };
+    setMessage("");
+    await saveCollectionPayload(payload, { collectionId: editingCollectionId });
   }
 
   return (
@@ -522,13 +683,14 @@ export default function FrontStagePage() {
 
       <section className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-6">
         <div className="space-y-4 sm:space-y-6">
-          <section className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm sm:rounded-3xl sm:p-4">
+          <section className="grid gap-4 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm sm:rounded-3xl sm:p-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
+            <div className="grid gap-3">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void searchGlyphs();
               }}
-              className="grid gap-2 sm:gap-3 lg:grid-cols-[1fr_160px_auto]"
+              className="grid gap-2 sm:gap-3"
             >
               <label className="relative block">
                 <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
@@ -564,6 +726,12 @@ export default function FrontStagePage() {
                 className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
                 placeholder="作者"
               />
+              <input
+                value={collectionTitle}
+                onChange={(e) => setCollectionTitle(e.target.value)}
+                className="rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 sm:rounded-2xl sm:px-4"
+                placeholder="作品標題"
+              />
               <button
                 type="submit"
                 disabled={loading}
@@ -572,7 +740,7 @@ export default function FrontStagePage() {
                 {loading ? "搜尋中" : "搜尋"}
               </button>
             </form>
-            <div className="mt-3 grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
+            <div className="grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-stone-700">查詢範圍</span>
                 {resultScopeOptions.map((option) => {
@@ -624,13 +792,58 @@ export default function FrontStagePage() {
                 })}
               </div>
             </div>
-            <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 sm:mt-4">
+            <div className="overflow-x-auto">
+              <div className="inline-flex min-w-full gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-1 lg:flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedScriptTypes([]);
+                    void searchGlyphs([]);
+                  }}
+                  disabled={loading && selectedScriptTypes.length === 0}
+                  aria-pressed={selectedScriptTypes.length === 0}
+                  className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
+                    selectedScriptTypes.length === 0
+                      ? "bg-red-800 text-white"
+                      : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
+                  }`}
+                >
+                  全部書體
+                </button>
+                {scriptFilters.map((script) => {
+                  const active = selectedScriptTypes.includes(script);
+                  return (
+                    <button
+                      key={script}
+                      type="button"
+                      onClick={() => toggleScriptFilter(script)}
+                      disabled={loading && active}
+                      aria-pressed={active}
+                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
+                        active
+                          ? "bg-red-800 text-white"
+                          : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
+                      }`}
+                    >
+                      {active ? <Check className="h-3.5 w-3.5" /> : null}
+                      {script}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            </div>
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3 lg:min-h-full">
               <div className="mb-3 flex items-start justify-between gap-3 sm:items-center">
                 <div className="flex min-w-0 items-center gap-2">
                   <BookOpen className="h-5 w-5 text-red-600" />
                   <div className="min-w-0">
                     <h2 className="font-bold font-serif">目前集字</h2>
-                    <p className="text-xs text-stone-500 sm:text-sm">點選單字可聚焦搜尋結果</p>
+                    <p className="text-xs text-stone-500 sm:text-sm">
+                      {editingCollectionId
+                        ? `正在編輯：${collectionTitle.trim() || q || "未命名集字作品"}`
+                        : "點選單字可聚焦搜尋結果"}
+                    </p>
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -643,15 +856,38 @@ export default function FrontStagePage() {
                       顯示全部
                     </button>
                   )}
-                  <button
-                    onClick={saveCollection}
-                    disabled={isSavingCollection}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
-                  >
-                    {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    <span className="sm:hidden">{isSavingCollection ? "儲存中" : "儲存集字"}</span>
-                    <span className="hidden sm:inline">{isSavingCollection ? "儲存中" : "儲存集字作品"}</span>
-                  </button>
+                  {editingCollectionId ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={updateLoadedCollection}
+                        disabled={isSavingCollection}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-800 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+                      >
+                        {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                        <span>{isSavingCollection ? "更新中" : "更新作品"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveCollection}
+                        disabled={isSavingCollection}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+                      >
+                        另存新作品
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={saveCollection}
+                      disabled={isSavingCollection}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
+                    >
+                      {isSavingCollection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      <span className="sm:hidden">{isSavingCollection ? "儲存中" : "儲存集字"}</span>
+                      <span className="hidden sm:inline">{isSavingCollection ? "儲存中" : "儲存集字作品"}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -753,46 +989,6 @@ export default function FrontStagePage() {
                 )
               )}
             </div>
-            <div className="mt-3 overflow-x-auto">
-              <div className="inline-flex min-w-full gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedScriptTypes([]);
-                    void searchGlyphs([]);
-                  }}
-                  disabled={loading && selectedScriptTypes.length === 0}
-                  aria-pressed={selectedScriptTypes.length === 0}
-                  className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
-                    selectedScriptTypes.length === 0
-                      ? "bg-red-800 text-white"
-                      : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
-                  }`}
-                >
-                  全部書體
-                </button>
-                {scriptFilters.map((script) => {
-                  const active = selectedScriptTypes.includes(script);
-                  return (
-                    <button
-                      key={script}
-                      type="button"
-                      onClick={() => toggleScriptFilter(script)}
-                      disabled={loading && active}
-                      aria-pressed={active}
-                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
-                        active
-                          ? "bg-red-800 text-white"
-                          : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
-                      }`}
-                    >
-                      {active ? <Check className="h-3.5 w-3.5" /> : null}
-                      {script}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
           </section>
 
           <section className="relative min-h-[320px] rounded-2xl border border-stone-200 bg-white p-3 sm:min-h-[400px] sm:rounded-3xl sm:p-4">
@@ -842,12 +1038,29 @@ export default function FrontStagePage() {
                   {glyphs.length === 0 ? (
                     <div className="rounded-2xl bg-stone-50 p-6 text-stone-500">目前資料庫沒有這個字。</div>
                   ) : (
+                    <>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-6">
-                      {glyphs.map((glyph) => (
+                      {glyphs.map((glyph) => {
+                        const selectedAtPosition = selected.some((item) => item.position === index && item.id === glyph.id);
+                        const selectedElsewhere = !selectedAtPosition && selected.some((item) => item.id === glyph.id);
+                        return (
                         <div
                           key={glyph.id}
-                          className="rounded-2xl border border-stone-200 bg-stone-50 p-2 text-left hover:border-red-700 sm:p-3"
+                          className={`relative rounded-2xl border p-2 text-left hover:border-red-700 sm:p-3 ${
+                            selectedAtPosition
+                              ? "border-red-700 bg-red-50 shadow-[0_0_0_3px_rgba(185,28,28,0.12)]"
+                              : selectedElsewhere
+                              ? "border-amber-300 bg-amber-50"
+                              : "border-stone-200 bg-stone-50"
+                          }`}
                         >
+                          {(selectedAtPosition || selectedElsewhere) && (
+                            <div className={`absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-xs font-bold ${
+                              selectedAtPosition ? "bg-red-800 text-white" : "bg-amber-600 text-white"
+                            }`}>
+                              {selectedAtPosition ? "已選" : "已在集字"}
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() => pickGlyph(glyph, index)}
@@ -883,9 +1096,38 @@ export default function FrontStagePage() {
                           >
                             練習
                           </Link>
+                          <Link
+                            href={`/glyph/${glyph.id}`}
+                            className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-red-800"
+                          >
+                            字圖詳情
+                          </Link>
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
+                    {data.hasMoreByChar?.[char] && (
+                      <>
+                        <div
+                          ref={(node) => {
+                            loadMoreSentinelRefs.current[char] = node;
+                          }}
+                          data-char={char}
+                          className="h-1"
+                        />
+                        <div className="mt-3 flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => void loadMoreForChar(char)}
+                            disabled={Boolean(loadingMoreChars[char])}
+                            className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {loadingMoreChars[char] ? "載入中..." : `載入更多「${char}」`}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                    </>
                   )}
                 </div>
               );

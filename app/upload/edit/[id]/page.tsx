@@ -4,6 +4,7 @@ import { ArrowLeft, LogOut, Pencil } from "lucide-react";
 import { AdminGlyphUploadForm, type ReplaceGlyphTarget } from "@/components/AdminGlyphUploadForm";
 import { LogoMark } from "@/components/LogoMark";
 import { getCurrentUser } from "@/lib/auth";
+import { glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { getDb } from "@/lib/db";
 
 const commonScriptTypes = ["草", "行", "隸", "楷"];
@@ -62,7 +63,7 @@ export default async function EditPersonalGlyphPage({ params }: Params) {
 
   const db = await getDb();
   const glyph = db.prepare(`
-    SELECT id, char, author, script_type, work_title, source, license, quality_score, image_url
+    SELECT id, char, author, script_type, work_title, source, license, quality_score, image_url, thumbnail_url, owner_user_id, visibility
     FROM glyphs
     WHERE id = ? AND owner_user_id = ?
   `).get(id, user.id) as
@@ -76,6 +77,9 @@ export default async function EditPersonalGlyphPage({ params }: Params) {
         license: string | null;
         quality_score: number;
         image_url: string;
+        thumbnail_url: string | null;
+        owner_user_id: string | null;
+        visibility: string | null;
       }
     | undefined;
 
@@ -91,7 +95,7 @@ export default async function EditPersonalGlyphPage({ params }: Params) {
     source: glyph.source,
     license: glyph.license,
     qualityScore: glyph.quality_score,
-    imageUrl: glyph.image_url,
+    imageUrl: glyphImageUrlForAccess(glyph, "image") ?? glyph.image_url,
   };
 
   return (

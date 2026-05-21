@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import { getBlobClient, glyphBlobNameFromPath, hasBlobConfig } from "@/lib/blob-storage";
+import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -52,6 +53,18 @@ async function getLocalGlyphResponse(parts: string[]) {
 
 export async function GET(_req: Request, { params }: Params) {
   const { path } = await params;
+  const imageUrl = `/glyphs/${path.map((part) => encodeURIComponent(part)).join("/")}`;
+  const db = await getDb();
+  const privateGlyph = db.prepare(`
+    SELECT id FROM glyphs
+    WHERE visibility = 'private'
+      AND owner_user_id IS NOT NULL
+      AND (image_url = ? OR thumbnail_url = ?)
+    LIMIT 1
+  `).get(imageUrl, imageUrl);
+  if (privateGlyph) {
+    return NextResponse.json({ error: "Image not found." }, { status: 404 });
+  }
 
   if (!hasBlobConfig()) {
     return getLocalGlyphResponse(path);

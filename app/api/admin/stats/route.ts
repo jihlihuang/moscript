@@ -67,6 +67,35 @@ export async function GET(req: NextRequest) {
       count DESC,
       label
   `).all();
+  const searchCount = db.prepare(`
+    SELECT COUNT(*) as count FROM usage_events
+    WHERE event_type = 'search'
+  `).get() as { count: number };
+  const popularSearchChars = db.prepare(`
+    SELECT subject, COUNT(*) as count
+    FROM usage_events
+    WHERE event_type = 'search' AND subject IS NOT NULL AND trim(subject) <> ''
+    GROUP BY subject
+    ORDER BY count DESC, subject
+    LIMIT 12
+  `).all();
+  const uploadFailures = db.prepare(`
+    SELECT details, COUNT(*) as count
+    FROM usage_events
+    WHERE event_type = 'upload_failed'
+    GROUP BY details
+    ORDER BY count DESC
+    LIMIT 12
+  `).all();
+  const uploadProcessing = db.prepare(`
+    SELECT
+      COUNT(*) as count,
+      AVG(CAST(json_extract(details, '$.processingMs') AS REAL)) as avgMs,
+      MAX(CAST(json_extract(details, '$.processingMs') AS REAL)) as maxMs
+    FROM usage_events
+    WHERE event_type = 'upload_succeeded'
+      AND json_extract(details, '$.processingMs') IS NOT NULL
+  `).get();
 
   await logAdminAction(req, user, "admin_stats_view", {
     targetType: "admin",
@@ -78,5 +107,11 @@ export async function GET(req: NextRequest) {
     totalChars: totalChars.count,
     totalCollections: totalCollections.count,
     scripts,
+    observability: {
+      searchCount: searchCount.count,
+      popularSearchChars,
+      uploadFailures,
+      uploadProcessing,
+    },
   });
 }

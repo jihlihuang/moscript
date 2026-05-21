@@ -9,6 +9,12 @@ type GlyphLikeStats = {
   collectionCount: number;
 };
 
+const glyphLikeEventName = "moscript:glyph-like-updated";
+
+function dispatchGlyphLikeUpdate(glyphId: number, stats: GlyphLikeStats) {
+  window.dispatchEvent(new CustomEvent(glyphLikeEventName, { detail: { glyphId, ...stats } }));
+}
+
 export function GlyphLikeButton({
   glyphId,
   initialLiked,
@@ -37,6 +43,18 @@ export function GlyphLikeButton({
     setLikeCount(initialLikeCount);
   }, [initialLiked, initialLikeCount]);
 
+  useEffect(() => {
+    function handleGlyphLikeUpdate(event: Event) {
+      const detail = (event as CustomEvent<GlyphLikeStats & { glyphId: number }>).detail;
+      if (!detail || detail.glyphId !== glyphId) return;
+      setLiked(detail.liked);
+      setLikeCount(detail.likeCount);
+    }
+
+    window.addEventListener(glyphLikeEventName, handleGlyphLikeUpdate);
+    return () => window.removeEventListener(glyphLikeEventName, handleGlyphLikeUpdate);
+  }, [glyphId]);
+
   async function toggleLike() {
     if (!isAuthenticated) {
       window.location.href = `/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`;
@@ -57,6 +75,7 @@ export function GlyphLikeButton({
       setLiked(nextStats.liked);
       setLikeCount(nextStats.likeCount);
       onChange?.(nextStats);
+      dispatchGlyphLikeUpdate(glyphId, nextStats);
     } catch (error) {
       alert(error instanceof Error ? error.message : "按讚失敗");
     } finally {

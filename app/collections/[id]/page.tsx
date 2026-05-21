@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 import { LogoMark } from "@/components/LogoMark";
 import { CollectionGlyphDisplay } from "@/components/CollectionGlyphDisplay";
+import { glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
 type Params = {
@@ -29,6 +30,8 @@ type Item = {
   work_title: string | null;
   image_url: string;
   thumbnail_url: string | null;
+  owner_user_id: string | null;
+  visibility: string | null;
   source: string | null;
   license: string | null;
   like_count: number;
@@ -61,6 +64,8 @@ export default async function CollectionPage({ params }: Params) {
       g.work_title,
       g.image_url,
       g.thumbnail_url,
+      g.owner_user_id,
+      g.visibility,
       g.source,
       g.license,
       ${glyphStatsSelectSql()}
@@ -70,6 +75,23 @@ export default async function CollectionPage({ params }: Params) {
     WHERE ci.collection_id = ?
     ORDER BY ci.position ASC
   `).all(user.id, id) as Item[];
+  const securedItems = items.map((item) => ({
+    ...item,
+    image_url: glyphImageUrlForAccess({
+      id: item.glyph_id,
+      owner_user_id: item.owner_user_id,
+      visibility: item.visibility,
+      image_url: item.image_url,
+      thumbnail_url: item.thumbnail_url,
+    }, "image") ?? item.image_url,
+    thumbnail_url: glyphImageUrlForAccess({
+      id: item.glyph_id,
+      owner_user_id: item.owner_user_id,
+      visibility: item.visibility,
+      image_url: item.image_url,
+      thumbnail_url: item.thumbnail_url,
+    }, "thumbnail"),
+  }));
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
@@ -103,13 +125,13 @@ export default async function CollectionPage({ params }: Params) {
           <CollectionGlyphDisplay
             collectionId={collection.id}
             initialDirection={collection.display_direction === "vertical" ? "vertical" : "horizontal"}
-            items={items}
+            items={securedItems}
             isAuthenticated={true}
             likeReturnTo={`/collections/${collection.id}`}
           />
 
           <div className="mt-4 grid gap-2 sm:mt-6 sm:gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {items.map((item) => (
+            {securedItems.map((item) => (
               <div key={`${item.position}-meta`} className="rounded-2xl bg-stone-50 p-3 text-sm text-stone-600 sm:p-4">
                 <div className="mb-1 font-serif text-base font-bold text-stone-900 sm:text-lg">{item.char}</div>
                 <div>作者：{item.author || "佚名"}</div>
@@ -118,6 +140,9 @@ export default async function CollectionPage({ params }: Params) {
                 <div>讚：{item.like_count}｜集字：{item.collection_count}</div>
                 <div className="truncate text-stone-500">來源：{item.source || "未標註"}</div>
                 <div className="truncate text-stone-500">授權：{item.license || "未標註"}</div>
+                <Link href={`/glyph/${item.glyph_id}`} className="mt-2 inline-flex rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800">
+                  字圖詳情
+                </Link>
               </div>
             ))}
           </div>

@@ -1,4 +1,5 @@
 import { getDb, type GlyphRow } from "@/lib/db";
+import { type GlyphResultScope, glyphAccessWhereSql, glyphAccessWhereSqlForUnaliasedGlyphs, glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
 export type GlyphDto = {
@@ -26,10 +27,12 @@ export type SearchGlyphOptions = {
   scriptType?: string;
   scriptTypes?: string[];
   perChar?: number;
+  limit?: number;
+  offset?: number;
   includePersonal?: boolean;
   includeAllPersonal?: boolean;
   userId?: string | null;
-  resultScope?: "library" | "all" | "liked" | "personal" | "public";
+  resultScope?: GlyphResultScope;
   sort?: "popular" | "newest" | "author" | "script";
 };
 
@@ -45,8 +48,8 @@ export function toGlyphDto(row: GlyphRow): GlyphDto {
     author: row.author,
     scriptType: row.script_type,
     workTitle: row.work_title,
-    imageUrl: row.image_url,
-    thumbnailUrl: row.thumbnail_url ?? null,
+    imageUrl: glyphImageUrlForAccess(row, "image") ?? row.image_url,
+    thumbnailUrl: glyphImageUrlForAccess(row, "thumbnail"),
     source: row.source,
     license: row.license,
     qualityScore: row.quality_score,
@@ -101,23 +104,13 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
       : options.sort === "script"
       ? scriptOrderSql
       : popularityOrderSql;
-  const safeUserId = (options.userId ?? "").replace(/'/g, "''");
   const resultScope = options.resultScope ?? (options.includePersonal ? "all" : "library");
-  const visibilityWhereSql = options.includeAllPersonal
-    ? "1 = 1"
-    : resultScope === "personal"
-    ? safeUserId
-      ? `g.owner_user_id = '${safeUserId}'`
-      : "1 = 0"
-    : resultScope === "public"
-    ? `(g.owner_user_id IS NULL OR g.visibility = 'public')`
-    : resultScope === "liked"
-    ? safeUserId
-      ? `(g.owner_user_id IS NULL OR g.visibility = 'public' OR g.owner_user_id = '${safeUserId}')`
-      : "1 = 0"
-    : resultScope === "all"
-    ? `(g.owner_user_id IS NULL OR g.visibility = 'public' OR g.owner_user_id = '${safeUserId}')`
-    : `g.owner_user_id IS NULL`;
+  const visibilityWhereSql = glyphAccessWhereSql({
+    glyphAlias: "g",
+    userId: options.userId,
+    includeAllPersonal: options.includeAllPersonal,
+    resultScope,
+  });
   const currentUserId = options.userId ?? "";
   const selectedScriptTypes = [
     ...(options.scriptTypes ?? []),
@@ -171,6 +164,14 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
     typeof options.perChar === "number" && Number.isFinite(options.perChar)
       ? Math.max(Math.floor(options.perChar), 1)
       : null;
+  const limit =
+    typeof options.limit === "number" && Number.isFinite(options.limit)
+      ? Math.max(Math.floor(options.limit), 1)
+      : null;
+  const offset =
+    typeof options.offset === "number" && Number.isFinite(options.offset)
+      ? Math.max(Math.floor(options.offset), 0)
+      : 0;
   const whereSql = where.length ? where.join(" AND ") : "1 = 1";
 
   const partitionSql = selectedScriptTypes.length > 0
@@ -207,11 +208,14 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
       CASE WHEN ? = '' THEN 999 ELSE instr(?, char) END,
       char,
       ${sortOrderSql}
+    ${limit ? "LIMIT ? OFFSET ?" : ""}
   `;
 
   const rows = perChar
     ? (db.prepare(rankedSql).all(currentUserId, ...params, perChar, q, q) as GlyphRow[])
-    : (db.prepare(unlimitedSql).all(currentUserId, ...params, q, q) as GlyphRow[]);
+    : (limit
+      ? db.prepare(unlimitedSql).all(currentUserId, ...params, q, q, limit, offset)
+      : db.prepare(unlimitedSql).all(currentUserId, ...params, q, q)) as GlyphRow[];
   return rows.map(toGlyphDto);
 }
 
@@ -233,23 +237,15 @@ export async function listScriptTypesForGlyphs(options: Pick<SearchGlyphOptions,
     params.push(`%${options.author}%`);
   }
 
-  const safeUserId = (options.userId ?? "").replace(/'/g, "''");
   const resultScope = options.resultScope ?? (options.includePersonal ? "all" : "library");
-  if (options.includeAllPersonal) {
-    where.push("1 = 1");
-  } else if (resultScope === "personal") {
-    where.push(safeUserId ? `owner_user_id = '${safeUserId}'` : "1 = 0");
-  } else if (resultScope === "public") {
-    where.push(`(owner_user_id IS NULL OR visibility = 'public')`);
-  } else if (resultScope === "liked") {
-    where.push(safeUserId ? `(owner_user_id IS NULL OR visibility = 'public' OR owner_user_id = '${safeUserId}')` : "1 = 0");
-    if (safeUserId) {
-      where.push(`EXISTS (SELECT 1 FROM glyph_likes gl WHERE gl.glyph_id = glyphs.id AND gl.user_id = '${safeUserId}')`);
-    }
-  } else if (resultScope === "all") {
-    where.push(`(owner_user_id IS NULL OR visibility = 'public' OR owner_user_id = '${safeUserId}')`);
-  } else {
-    where.push(`owner_user_id IS NULL`);
+  where.push(glyphAccessWhereSqlForUnaliasedGlyphs({
+    userId: options.userId,
+    includeAllPersonal: options.includeAllPersonal,
+    resultScope,
+  }));
+  if (resultScope === "liked") {
+    const safeUserId = (options.userId ?? "").replace(/'/g, "''");
+    where.push(safeUserId ? `EXISTS (SELECT 1 FROM glyph_likes gl WHERE gl.glyph_id = glyphs.id AND gl.user_id = '${safeUserId}')` : "1 = 0");
   }
 
   const rows = db.prepare(`

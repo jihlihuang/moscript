@@ -8,6 +8,7 @@ import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 import { LogoMark } from "@/components/LogoMark";
 import { PersonalGlyphManager, type PersonalGlyph } from "@/components/PersonalGlyphManager";
 import { PersonalPageTabs } from "@/components/PersonalPageTabs";
+import { glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,8 @@ type CollectionItemPreview = {
   work_title: string | null;
   image_url: string;
   thumbnail_url: string | null;
+  owner_user_id: string | null;
+  visibility: string | null;
   like_count: number;
   collection_count: number;
   liked_by_me: number;
@@ -92,6 +95,8 @@ export default async function PersonalPage() {
         g.work_title,
         g.image_url,
         g.thumbnail_url,
+        g.owner_user_id,
+        g.visibility,
         ${glyphStatsSelectSql()}
       FROM collection_items ci
       JOIN glyphs g ON g.id = ci.glyph_id
@@ -101,7 +106,25 @@ export default async function PersonalPage() {
     `).all(user.id, ...collections.map((collection) => collection.id)) as CollectionItemPreview[]
     : [];
 
-  const itemsByCollection = itemRows.reduce<Record<number, CollectionItemPreview[]>>((acc, item) => {
+  const securedItemRows = itemRows.map((item) => ({
+    ...item,
+    image_url: glyphImageUrlForAccess({
+      id: item.glyph_id,
+      owner_user_id: item.owner_user_id,
+      visibility: item.visibility,
+      image_url: item.image_url,
+      thumbnail_url: item.thumbnail_url,
+    }, "image") ?? item.image_url,
+    thumbnail_url: glyphImageUrlForAccess({
+      id: item.glyph_id,
+      owner_user_id: item.owner_user_id,
+      visibility: item.visibility,
+      image_url: item.image_url,
+      thumbnail_url: item.thumbnail_url,
+    }, "thumbnail"),
+  }));
+
+  const itemsByCollection = securedItemRows.reduce<Record<number, CollectionItemPreview[]>>((acc, item) => {
     acc[item.collection_id] ??= [];
     acc[item.collection_id].push(item);
     return acc;
@@ -145,8 +168,8 @@ export default async function PersonalPage() {
     author: glyph.author,
     scriptType: glyph.script_type,
     workTitle: glyph.work_title,
-    imageUrl: glyph.image_url,
-    thumbnailUrl: glyph.thumbnail_url,
+    imageUrl: glyphImageUrlForAccess({ ...glyph, owner_user_id: user.id }, "image") ?? glyph.image_url,
+    thumbnailUrl: glyphImageUrlForAccess({ ...glyph, owner_user_id: user.id }, "thumbnail"),
     visibility: glyph.visibility === "private" ? "private" : "public",
     likeCount: glyph.like_count,
     collectionCount: glyph.collection_count,
