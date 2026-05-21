@@ -447,7 +447,7 @@ export default function FrontStagePage() {
                 imageClassName="h-10 w-10 sm:h-12 sm:w-12"
               />
               <div>
-                <h1 className="sr-only">墨跡</h1>
+                <h1 className="sr-only">墨跡字帖</h1>
                 <p className="text-xs font-medium leading-snug text-stone-500 sm:text-sm">從字形到心境，重新認識書法之美</p>
               </div>
             </div>
