@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, type GlyphRow, syncDbToBlob } from "@/lib/db";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
 import { toGlyphDto } from "@/lib/glyphs";
+import { deleteGlyphImageByUrl } from "@/lib/glyph-upload";
 
 export const runtime = "nodejs";
 
@@ -78,8 +79,12 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   const { id } = await params;
   const db = await getDb();
+  const glyph = db.prepare("SELECT image_url FROM glyphs WHERE id = ?").get(id) as { image_url: string } | undefined;
   const info = db.prepare("DELETE FROM glyphs WHERE id = ?").run(id);
   await syncDbToBlob();
+  if (info.changes > 0) {
+    await deleteGlyphImageByUrl(glyph?.image_url);
+  }
   await logAdminAction(req, user, "glyph_delete", {
     targetType: "glyph",
     targetId: id,

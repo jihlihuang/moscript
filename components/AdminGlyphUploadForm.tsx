@@ -1223,11 +1223,17 @@ export function AdminGlyphUploadForm({
   isForbidden,
   onUploaded,
   replaceGlyph,
+  uploadEndpoint = "/api/admin/upload",
+  showVisibility = false,
+  submitLabel,
 }: {
   scriptOptions: string[];
   isForbidden?: boolean;
   onUploaded?: () => void | Promise<void>;
   replaceGlyph?: ReplaceGlyphTarget | null;
+  uploadEndpoint?: string;
+  showVisibility?: boolean;
+  submitLabel?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const batchFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1249,6 +1255,7 @@ export function AdminGlyphUploadForm({
   const [uploadSource, setUploadSource] = useState("");
   const [uploadLicense, setUploadLicense] = useState("");
   const [uploadQualityScore, setUploadQualityScore] = useState("0");
+  const [uploadVisibility, setUploadVisibility] = useState<"public" | "private">("public");
   const [isComposingUploadChar, setIsComposingUploadChar] = useState(false);
   const [isComposingUploadAuthor, setIsComposingUploadAuthor] = useState(false);
   const [message, setMessage] = useState("");
@@ -1572,9 +1579,10 @@ export function AdminGlyphUploadForm({
         formData.set("source", uploadSource);
         formData.set("license", uploadLicense);
         formData.set("qualityScore", uploadQualityScore);
+        formData.set("visibility", uploadVisibility);
         formData.set("file", item.file, item.file.name);
 
-        const res = await fetch("/api/admin/upload", {
+        const res = await fetch(uploadEndpoint, {
           method: "POST",
           body: formData,
         });
@@ -1628,6 +1636,7 @@ export function AdminGlyphUploadForm({
       formData.set("source", uploadSource);
       formData.set("license", uploadLicense);
       formData.set("qualityScore", uploadQualityScore);
+      formData.set("visibility", uploadVisibility);
       if (processedUploadFile && canvas) {
         const renderedFile = await canvasToPngFile(canvas, processedUploadFile.name);
         formData.set("file", renderedFile, renderedFile.name);
@@ -1635,7 +1644,7 @@ export function AdminGlyphUploadForm({
         formData.delete("file");
       }
 
-      const endpoint = replaceGlyph ? `/api/glyphs/${replaceGlyph.id}/image` : "/api/admin/upload";
+      const endpoint = replaceGlyph ? `/api/glyphs/${replaceGlyph.id}/image` : uploadEndpoint;
       const res = await fetch(endpoint, {
         method: "POST",
         body: formData,
@@ -2057,6 +2066,26 @@ export function AdminGlyphUploadForm({
         <input name="source" value={uploadSource} onChange={(e) => setUploadSource(e.target.value)} placeholder="來源，例如：local-dataset" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
         <input name="license" value={uploadLicense} onChange={(e) => setUploadLicense(e.target.value)} placeholder="授權，例如：non-commercial-research" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
         <input name="qualityScore" type="number" value={uploadQualityScore} onChange={(e) => setUploadQualityScore(e.target.value)} placeholder="品質分數(排序用)" disabled={isUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+        {showVisibility && !isReplacingGlyph && (
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-stone-100 p-1">
+            {[
+              ["public", "公開"],
+              ["private", "私人"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setUploadVisibility(value as "public" | "private")}
+                disabled={isUploading || isBatchUploading}
+                className={`min-h-10 rounded-lg px-3 text-sm font-bold ${
+                  uploadVisibility === value ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
+                } disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {uploadMode === "batch" && !isReplacingGlyph ? (
           <button
             type="button"
@@ -2070,7 +2099,7 @@ export function AdminGlyphUploadForm({
         ) : (
           <button disabled={isForbidden || isUploading || isProcessingUploadImage || (!replaceGlyph && !processedUploadFile)} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800">
             {isUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {isUploading ? (processedUploadFile ? "上傳中" : "儲存中") : isReplacingGlyph ? "儲存字圖資料" : "上傳並寫入資料庫"}
+            {isUploading ? (processedUploadFile ? "上傳中" : "儲存中") : isReplacingGlyph ? "儲存字圖資料" : submitLabel ?? "上傳並寫入資料庫"}
           </button>
         )}
         {message && <div className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{message}</div>}

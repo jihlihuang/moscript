@@ -45,6 +45,11 @@ export async function uploadBufferToBlob(buffer: Buffer, blobName: string, conte
   });
 }
 
+export async function deleteBlobIfExists(blobName: string) {
+  const container = await ensureContainer();
+  await container.getBlockBlobClient(blobName).deleteIfExists();
+}
+
 export function glyphBlobName(char: string, fileName: string) {
   return path.posix.join(glyphsPrefix, char, fileName);
 }

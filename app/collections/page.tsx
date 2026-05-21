@@ -87,9 +87,9 @@ export default async function CollectionsPage() {
               </div>
             </div>
           </div>
-          <Link href="/" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white sm:w-auto">
+          <Link href="/me" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white sm:w-auto">
             <ArrowLeft className="h-4 w-4" />
-            回首頁
+            回個人頁
           </Link>
         </div>
       </header>

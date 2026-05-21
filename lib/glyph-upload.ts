@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { glyphBlobName, glyphImageUrl, hasBlobConfig, uploadBufferToBlob } from "@/lib/blob-storage";
+import { deleteBlobIfExists, glyphBlobName, glyphBlobNameFromPath, glyphImageUrl, hasBlobConfig, uploadBufferToBlob } from "@/lib/blob-storage";
 
 export const allowedGlyphImageExtensions = new Set([
   ".jpg",
@@ -76,4 +76,27 @@ export async function storeGlyphImage({
     imageUrl: glyphImageUrl(char, fileName),
     storage,
   };
+}
+
+export async function deleteGlyphImageByUrl(imageUrl?: string | null) {
+  if (!imageUrl || !imageUrl.startsWith("/glyphs/")) return;
+  const parts = imageUrl
+    .replace(/^\/glyphs\/?/, "")
+    .split("/")
+    .filter(Boolean)
+    .map((part) => decodeURIComponent(part));
+  if (parts.length < 2) return;
+
+  if (hasBlobConfig()) {
+    await deleteBlobIfExists(glyphBlobNameFromPath(parts));
+    return;
+  }
+
+  const publicRoot = path.join(process.cwd(), "public");
+  const localPath = path.join(publicRoot, "glyphs", ...parts);
+  const relativePath = path.relative(publicRoot, localPath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("Invalid glyph delete path.");
+  }
+  await fs.rm(localPath, { force: true });
 }

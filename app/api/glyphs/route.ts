@@ -13,8 +13,20 @@ export async function GET(req: NextRequest) {
   const char = params.get("char") ?? "";
   const perCharParam = params.get("perChar");
   const perChar = perCharParam ? Number(perCharParam) : undefined;
+  const includePersonal = params.get("includePersonal") === "1";
+  const includeAllPersonal = params.get("includeAllPersonal") === "1";
+  const user = requireRequestUser(req);
 
-  const glyphs = await searchGlyphs({ q, char, author, scriptType, perChar });
+  const glyphs = await searchGlyphs({
+    q,
+    char,
+    author,
+    scriptType,
+    perChar,
+    includePersonal,
+    includeAllPersonal: Boolean(includeAllPersonal && user && isAdminAllowed(user)),
+    userId: user?.id ?? null,
+  });
   const chars = [...new Set(Array.from(q || char).filter((c) => c.trim() !== ""))];
 
   return NextResponse.json({

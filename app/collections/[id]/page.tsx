@@ -82,9 +82,9 @@ export default async function CollectionPage({ params }: Params) {
               載入到首頁
             </Link>
             <DeleteCollectionButton id={collection.id} redirectOnSuccess={true} />
-            <Link href="/collections" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
+            <Link href="/me" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
               <ArrowLeft className="h-4 w-4" />
-              回列表
+              回個人頁
             </Link>
           </div>
         </div>

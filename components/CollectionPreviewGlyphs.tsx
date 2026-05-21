@@ -20,11 +20,13 @@ export function CollectionPreviewGlyphs({
   initialDirection,
   items,
   text,
+  detailHref,
 }: {
   collectionId: number;
   initialDirection: "horizontal" | "vertical";
   items: PreviewGlyph[];
   text: string;
+  detailHref?: string;
 }) {
   const [direction, setDirection] = useCollectionDirectionPreference(collectionId, initialDirection);
   const horizontalItems = items.slice(0, 8);
@@ -78,9 +80,9 @@ export function CollectionPreviewGlyphs({
               {horizontalItems.map((item) => (
                 <Link
                   key={`${item.position}-${item.glyph_id}`}
-                  href={`/practice/${item.glyph_id}`}
+                  href={detailHref ?? `/practice/${item.glyph_id}`}
                   className="rounded-xl focus:outline-none focus:ring-2 focus:ring-red-800"
-                  title={`練習 ${item.char}`}
+                  title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
                   onClick={(event) => {
                     event.stopPropagation();
                   }}
@@ -113,9 +115,9 @@ export function CollectionPreviewGlyphs({
                 {verticalItems.map((item) => (
                   <Link
                     key={`${item.position}-${item.glyph_id}`}
-                    href={`/practice/${item.glyph_id}`}
+                    href={detailHref ?? `/practice/${item.glyph_id}`}
                     className="shrink-0 snap-center rounded-xl [direction:ltr] focus:outline-none focus:ring-2 focus:ring-red-800"
-                    title={`練習 ${item.char}`}
+                    title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
                     onClick={(event) => {
                       event.stopPropagation();
                     }}
@@ -145,15 +147,21 @@ export function CollectionPreviewGlyphs({
         )
       ) : (
         direction === "horizontal" ? (
-          <div className="line-clamp-2 min-h-[88px] rounded-2xl bg-stone-50 p-3 text-lg tracking-[0.18em] text-stone-800 sm:text-xl sm:tracking-[0.25em]">
+          <Link
+            href={detailHref ?? "#"}
+            className={`block line-clamp-2 min-h-[88px] rounded-2xl bg-stone-50 p-3 text-lg tracking-[0.18em] text-stone-800 sm:text-xl sm:tracking-[0.25em] ${detailHref ? "hover:text-red-800" : "pointer-events-none"}`}
+          >
             {text}
-          </div>
+          </Link>
         ) : (
-          <div className="flex justify-center rounded-2xl bg-stone-50 p-3">
+          <Link
+            href={detailHref ?? "#"}
+            className={`flex justify-center rounded-2xl bg-stone-50 p-3 ${detailHref ? "hover:text-red-800" : "pointer-events-none"}`}
+          >
             <div className="max-h-48 whitespace-pre-wrap text-center font-serif text-2xl leading-relaxed text-stone-800 [writing-mode:vertical-rl]">
               {text}
             </div>
-          </div>
+          </Link>
         )
       )}
     </div>

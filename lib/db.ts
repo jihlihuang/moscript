@@ -20,6 +20,13 @@ export type GlyphRow = {
   source: string | null;
   license: string | null;
   quality_score: number;
+  owner_user_id: string | null;
+  owner_user_email: string | null;
+  owner_user_name: string | null;
+  visibility: string | null;
+  like_count?: number;
+  collection_count?: number;
+  liked_by_me?: number;
   created_at: string;
 };
 
@@ -75,6 +82,10 @@ export function initSchema(db: Database.Database) {
       source TEXT,
       license TEXT,
       quality_score INTEGER DEFAULT 0,
+      owner_user_id TEXT,
+      owner_user_email TEXT,
+      owner_user_name TEXT,
+      visibility TEXT DEFAULT 'public',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -104,6 +115,19 @@ export function initSchema(db: Database.Database) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_collection_items_collection_id ON collection_items(collection_id);
+    CREATE INDEX IF NOT EXISTS idx_collection_items_glyph_id ON collection_items(glyph_id);
+
+    CREATE TABLE IF NOT EXISTS glyph_likes (
+      glyph_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      user_email TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (glyph_id, user_id),
+      FOREIGN KEY(glyph_id) REFERENCES glyphs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_glyph_likes_glyph_id ON glyph_likes(glyph_id);
+    CREATE INDEX IF NOT EXISTS idx_glyph_likes_user_id ON glyph_likes(user_id);
 
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -148,4 +172,22 @@ export function initSchema(db: Database.Database) {
     db.prepare("ALTER TABLE collections ADD COLUMN display_direction TEXT DEFAULT 'horizontal'").run();
   }
   db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)").run();
+
+  const glyphColumns = db.prepare("PRAGMA table_info(glyphs)").all() as { name: string }[];
+  const glyphColumnNames = new Set(glyphColumns.map((column) => column.name));
+  if (!glyphColumnNames.has("owner_user_id")) {
+    db.prepare("ALTER TABLE glyphs ADD COLUMN owner_user_id TEXT").run();
+  }
+  if (!glyphColumnNames.has("owner_user_email")) {
+    db.prepare("ALTER TABLE glyphs ADD COLUMN owner_user_email TEXT").run();
+  }
+  if (!glyphColumnNames.has("owner_user_name")) {
+    db.prepare("ALTER TABLE glyphs ADD COLUMN owner_user_name TEXT").run();
+  }
+  if (!glyphColumnNames.has("visibility")) {
+    db.prepare("ALTER TABLE glyphs ADD COLUMN visibility TEXT DEFAULT 'public'").run();
+  }
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_owner_user_id ON glyphs(owner_user_id)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_visibility ON glyphs(visibility)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_collection_items_glyph_id ON collection_items(glyph_id)").run();
 }

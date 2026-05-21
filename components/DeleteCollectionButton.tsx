@@ -27,7 +27,7 @@ export function DeleteCollectionButton({ id, redirectOnSuccess = false }: Props)
 
       if (res.ok) {
         if (redirectOnSuccess) {
-          router.push("/collections");
+          router.push("/me");
           router.refresh();
         } else {
           router.refresh();

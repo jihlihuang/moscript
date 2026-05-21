@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, type GlyphRow, syncDbToBlob } from "@/lib/db";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
-import { onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
+import { deleteGlyphImageByUrl, onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
 
 export const runtime = "nodejs";
 
@@ -58,6 +58,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     id
   );
   await syncDbToBlob();
+  if (storedImage && imageUrl !== glyph.image_url) {
+    await deleteGlyphImageByUrl(glyph.image_url);
+  }
   await logAdminAction(req, user, hasNewImage ? "glyph_image_replace" : "glyph_update", {
     targetType: "glyph",
     targetId: id,

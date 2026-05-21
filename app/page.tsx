@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, Images, LogIn, LogOut, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, Heart, LogIn, LogOut, RefreshCw, Search, Trash2, UserRound } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
 
@@ -10,6 +10,11 @@ type GlyphDto = GlyphLike & {
   source?: string | null;
   license?: string | null;
   qualityScore?: number;
+  ownerUserId?: string | null;
+  visibility?: string;
+  likeCount?: number;
+  collectionCount?: number;
+  likedByMe?: boolean;
 };
 
 type ApiResult = {
@@ -84,6 +89,7 @@ export default function FrontStagePage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isAdminVisible, setIsAdminVisible] = useState(false);
+  const [includePersonalGlyphs, setIncludePersonalGlyphs] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
   const pendingSaveStartedRef = useRef(false);
   const collectionLoadStartedRef = useRef(false);
@@ -146,7 +152,6 @@ export default function FrontStagePage() {
     () => ["", ...availableScripts],
     [availableScripts]
   );
-
   const saveResult = useMemo(() => {
     if (message.startsWith("已儲存：")) {
       return {
@@ -226,6 +231,7 @@ export default function FrontStagePage() {
 
       const params = new URLSearchParams({ q });
       if (author) params.set("author", author);
+      if (includePersonalGlyphs) params.set("includePersonal", "1");
 
       const res = await fetch(`/api/glyphs/scripts?${params.toString()}`);
       const json = (await res.json()) as ScriptResponse;
@@ -235,9 +241,9 @@ export default function FrontStagePage() {
     }
 
     void loadAvailableScripts();
-  }, [author, q, queryChars.length]);
+  }, [author, includePersonalGlyphs, q, queryChars.length]);
 
-  async function searchGlyphs(nextScriptType = scriptType, preservePosition = false, nextQ = q) {
+  async function searchGlyphs(nextScriptType = scriptType, preservePosition = false, nextQ = q, nextIncludePersonal = includePersonalGlyphs) {
     const cleanedQ = onlyChinese(nextQ);
     if (cleanedQ !== q) {
       setQ(cleanedQ);
@@ -250,6 +256,7 @@ export default function FrontStagePage() {
     const params = new URLSearchParams({ q: cleanedQ });
     if (author) params.set("author", author);
     if (nextScriptType) params.set("scriptType", nextScriptType);
+    if (nextIncludePersonal) params.set("includePersonal", "1");
 
     const res = await fetch(`/api/glyphs?${params.toString()}`);
     const json = (await res.json()) as ApiResult;
@@ -266,6 +273,34 @@ export default function FrontStagePage() {
       else next.push(chosen);
       return next.sort((a, b) => a.position - b.position);
     });
+  }
+
+  async function toggleGlyphLike(glyphId: number) {
+    if (!user) {
+      window.location.href = `/api/auth/google?returnTo=${encodeURIComponent("/")}`;
+      return;
+    }
+    const res = await fetch(`/api/glyphs/${glyphId}/like`, { method: "POST" });
+    const json = await res.json();
+    if (!res.ok) {
+      setMessage(json.error ?? "按讚失敗");
+      return;
+    }
+
+    const patchGlyph = <T extends GlyphDto>(glyph: T): T =>
+      glyph.id === glyphId
+        ? { ...glyph, likedByMe: json.liked, likeCount: json.likeCount, collectionCount: json.collectionCount }
+        : glyph;
+    setData((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        results: Object.fromEntries(
+          Object.entries(current.results).map(([char, glyphs]) => [char, glyphs.map(patchGlyph)])
+        ),
+      };
+    });
+    setSelected((items) => items.map(patchGlyph));
   }
 
   function removeSelected(position: number) {
@@ -328,6 +363,7 @@ export default function FrontStagePage() {
 
       const params = new URLSearchParams({ q: onlyChinese(json.collection.text) });
       if (loadedScriptType) params.set("scriptType", loadedScriptType);
+      if (includePersonalGlyphs) params.set("includePersonal", "1");
       const glyphsRes = await fetch(`/api/glyphs?${params.toString()}`);
       const glyphsJson = (await glyphsRes.json()) as ApiResult;
       setData(glyphsJson);
@@ -439,13 +475,15 @@ export default function FrontStagePage() {
                 Google 登入
               </Link>
             )}
-            <Link
-              href="/collections"
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
-            >
-              <Images className="h-4 w-4" />
-              集字作品
-            </Link>
+            {user && (
+              <Link
+                href="/me"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
+              >
+                <UserRound className="h-4 w-4" />
+                個人頁
+              </Link>
+            )}
             {isAdminVisible && (
               <Link
                 href="/admin"
@@ -511,6 +549,26 @@ export default function FrontStagePage() {
                 {loading ? "搜尋中" : "搜尋"}
               </button>
             </form>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">
+              <span>查詢範圍</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !includePersonalGlyphs;
+                  setIncludePersonalGlyphs(next);
+                  if (onlyChinese(q)) {
+                    void searchGlyphs(scriptType, true, q, next);
+                  }
+                }}
+                className={`rounded-xl px-3 py-2 text-sm font-bold ${
+                  includePersonalGlyphs
+                    ? "bg-red-800 text-white"
+                    : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
+                }`}
+              >
+                {includePersonalGlyphs ? "已包含個人字圖" : "不含個人字圖"}
+              </button>
+            </div>
             <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 sm:mt-4">
               <div className="mb-3 flex items-start justify-between gap-3 sm:items-center">
                 <div className="flex min-w-0 items-center gap-2">
@@ -729,7 +787,29 @@ export default function FrontStagePage() {
                             <GlyphImage glyph={glyph} size={110} containerClassName="h-[96px] w-full sm:h-[110px] sm:w-full" />
                             <div className="mt-2 text-sm font-medium text-stone-700">{glyph.author || "佚名"}</div>
                             <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
+                            {glyph.ownerUserId && (
+                              <div className="mt-1 text-xs font-bold text-red-700">
+                                {glyph.visibility === "private" ? "私人字圖" : "個人公開"}
+                              </div>
+                            )}
                           </button>
+                          <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-stone-500">
+                            <button
+                              type="button"
+                              onClick={() => void toggleGlyphLike(glyph.id)}
+                              className={`inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-2 font-bold ${
+                                glyph.likedByMe
+                                  ? "border-red-700 bg-red-50 text-red-800"
+                                  : "border-stone-300 bg-white text-stone-600 hover:border-red-700 hover:text-red-800"
+                              }`}
+                            >
+                              <Heart className={`h-4 w-4 ${glyph.likedByMe ? "fill-current" : ""}`} />
+                              {glyph.likeCount ?? 0}
+                            </button>
+                            <div className="inline-flex items-center justify-center rounded-xl border border-stone-200 bg-white px-2 py-2 font-bold text-stone-600">
+                              集字 {glyph.collectionCount ?? 0}
+                            </div>
+                          </div>
                           <Link
                             href={`/practice/${glyph.id}`}
                             className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
