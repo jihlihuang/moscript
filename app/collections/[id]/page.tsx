@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Search } from "lucide-react";
@@ -41,6 +42,35 @@ type Item = {
   collection_count: number;
   liked_by_me: number;
 };
+
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  const { id } = await params;
+  const db = await getDb();
+  const row = db.prepare("SELECT title, text FROM collections WHERE id = ?").get(id) as
+    | { title: string; text: string }
+    | undefined;
+
+  if (!row) return { title: "集字作品 | 墨跡字帖" };
+
+  const displayTitle = row.title || row.text;
+  const title = `${displayTitle} | 墨跡字帖`;
+  const description = `「${row.text}」集字作品，收錄於墨跡字帖。`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "article",
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
+}
 
 export default async function CollectionPage({ params }: Params) {
   const user = await getCurrentUser();

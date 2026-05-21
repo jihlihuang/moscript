@@ -45,10 +45,9 @@ export default async function GlyphDetailPage({ params }: Params) {
     FROM collections c
     JOIN collection_items ci ON ci.collection_id = c.id
     WHERE ci.glyph_id = ?
-      AND (? <> '' AND c.user_id = ?)
     ORDER BY c.created_at DESC
     LIMIT 12
-  `).all(id, user?.id ?? "", user?.id ?? "") as RelatedCollection[];
+  `).all(id) as RelatedCollection[];
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
@@ -133,19 +132,19 @@ export default async function GlyphDetailPage({ params }: Params) {
           <div className="rounded-3xl border border-stone-200 bg-white p-4">
             <div className="mb-3 flex items-center gap-2 font-bold">
               <BookOpen className="h-4 w-4 text-red-700" />
-              相關作品
+              出現於集字
             </div>
             {relatedCollections.length > 0 ? (
               <div className="grid gap-2">
                 {relatedCollections.map((collection) => (
                   <Link key={collection.id} href={`/collections/${collection.id}`} className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm hover:border-red-700">
-                    <div className="font-bold text-stone-900">{collection.title}</div>
+                    <div className="font-bold text-stone-900">{collection.title || "未命名集字作品"}</div>
                     <div className="truncate text-stone-500">{collection.text}</div>
                   </Link>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-stone-500">目前沒有可顯示的相關作品。</p>
+              <p className="text-sm text-stone-500">尚未被任何集字作品收錄。</p>
             )}
           </div>
         </aside>

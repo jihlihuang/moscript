@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, RefreshCw, Search, Trash2, UserRound, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, Menu, RefreshCw, Search, Trash2, UserRound, X } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
 import { GlyphLikeButton } from "@/components/GlyphLikeButton";
@@ -101,6 +101,7 @@ export default function FrontStagePage() {
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
   const pendingSaveStartedRef = useRef(false);
   const collectionLoadStartedRef = useRef(false);
   const initialGlyphLoadStartedRef = useRef(false);
@@ -626,7 +627,7 @@ export default function FrontStagePage() {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <LogoMark
@@ -640,10 +641,11 @@ export default function FrontStagePage() {
               </div>
             </div>
           </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+          <div className="flex items-center gap-2">
+            {/* 登入／登出：永遠顯示 */}
             {user ? (
-              <form action="/api/auth/logout?returnTo=/" method="post" onSubmit={handleLogout} className="contents sm:flex sm:items-center sm:gap-2">
-                <span className="hidden max-w-[220px] truncate text-sm text-stone-500 md:inline">
+              <form action="/api/auth/logout?returnTo=/" method="post" onSubmit={handleLogout} className="flex items-center gap-2">
+                <span className="hidden max-w-[180px] truncate text-sm text-stone-500 md:inline">
                   {user.email}
                 </span>
                 <button
@@ -651,7 +653,7 @@ export default function FrontStagePage() {
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
                 >
                   <LogOut className="h-4 w-4" />
-                  登出
+                  <span className="hidden sm:inline">登出</span>
                 </button>
               </form>
             ) : (
@@ -663,23 +665,69 @@ export default function FrontStagePage() {
                 Google 登入
               </Link>
             )}
+
+            {/* 個人頁：桌機直接顯示，手機收入選單 */}
             {user && (
               <Link
                 href="/me"
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
+                className="hidden sm:inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
               >
                 <UserRound className="h-4 w-4" />
                 個人頁
               </Link>
             )}
+
+            {/* 後台管理：桌機直接顯示，手機收入選單 */}
             {isAdminVisible && (
               <Link
                 href="/admin"
-                className="col-span-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 sm:col-span-1 sm:px-4 sm:text-sm"
+                className="hidden sm:inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white hover:bg-stone-900 sm:px-4 sm:text-sm"
               >
                 <Database className="h-4 w-4" />
                 後台管理
               </Link>
+            )}
+
+            {/* 手機選單：只在登入後且有次要項目時顯示 */}
+            {user && (
+              <div className="relative sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsNavMenuOpen((v) => !v)}
+                  className="inline-flex min-h-10 w-10 items-center justify-center rounded-xl border border-stone-300 text-stone-700 hover:border-red-700 hover:text-stone-900"
+                  aria-label="更多選項"
+                >
+                  {isNavMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                </button>
+                {isNavMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsNavMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full z-50 mt-1 min-w-[120px] rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
+                      <Link
+                        href="/me"
+                        onClick={() => setIsNavMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-stone-700 hover:bg-stone-50 hover:text-red-800"
+                      >
+                        <UserRound className="h-4 w-4" />
+                        個人頁
+                      </Link>
+                      {isAdminVisible && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setIsNavMenuOpen(false)}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-stone-700 hover:bg-stone-50 hover:text-red-800"
+                        >
+                          <Database className="h-4 w-4" />
+                          後台管理
+                        </Link>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>

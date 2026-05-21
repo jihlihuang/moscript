@@ -42,55 +42,43 @@ type CollectionItemPreview = {
   liked_by_me: number;
 };
 
-export default async function PersonalPage() {
+export default async function PersonalPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string }>;
+}) {
+  const query = await searchParams;
+  const defaultTab: "collections" | "glyphs" =
+    query?.tab === "glyphs" ? "glyphs" : "collections";
+
   const user = await getCurrentUser();
   if (!user) redirect(`/api/auth/google?returnTo=${encodeURIComponent("/me")}`);
 
   const db = await getDb();
   const stats = db
     .prepare(
-      `
-    SELECT
-      (SELECT COUNT(*) FROM collections WHERE user_id = ?) AS collection_count,
-      (SELECT COUNT(*) FROM glyphs WHERE owner_user_id = ?) AS glyph_count,
-      (SELECT COUNT(*) FROM glyphs WHERE owner_user_id = ? AND visibility = 'public') AS public_glyph_count,
-      (SELECT COUNT(*) FROM glyphs WHERE owner_user_id = ? AND visibility = 'private') AS private_glyph_count,
-      (SELECT COUNT(*)
-       FROM glyph_likes gl
-       JOIN glyphs g ON g.id = gl.glyph_id
-       WHERE g.owner_user_id = ?) AS received_like_count,
-      (SELECT COUNT(DISTINCT ci.collection_id)
-       FROM collection_items ci
-       JOIN glyphs g ON g.id = ci.glyph_id
-       WHERE g.owner_user_id = ?) AS used_collection_count
-  `,
+      `SELECT
+        (SELECT COUNT(*) FROM collections WHERE user_id = ?) AS collection_count,
+        (SELECT COUNT(*) FROM glyphs WHERE owner_user_id = ?) AS glyph_count,
+        (SELECT COUNT(*) FROM glyphs WHERE owner_user_id = ? AND visibility = 'public') AS public_glyph_count,
+        (SELECT COUNT(*) FROM glyph_likes gl JOIN glyphs g ON g.id = gl.glyph_id WHERE g.owner_user_id = ?) AS received_like_count`,
     )
-    .get(user.id, user.id, user.id, user.id, user.id, user.id) as {
+    .get(user.id, user.id, user.id, user.id) as {
     collection_count: number;
     glyph_count: number;
     public_glyph_count: number;
-    private_glyph_count: number;
     received_like_count: number;
-    used_collection_count: number;
   };
 
   const collections = db
     .prepare(
-      `
-    SELECT
-      c.id,
-      c.title,
-      c.text,
-      c.display_direction,
-      c.created_at,
-      COUNT(ci.id) AS item_count
-    FROM collections c
-    LEFT JOIN collection_items ci ON ci.collection_id = c.id
-    WHERE c.user_id = ?
-    GROUP BY c.id
-    ORDER BY c.id DESC
-    LIMIT 6
-  `,
+      `SELECT c.id, c.title, c.text, c.display_direction, c.created_at, COUNT(ci.id) AS item_count
+       FROM collections c
+       LEFT JOIN collection_items ci ON ci.collection_id = c.id
+       WHERE c.user_id = ?
+       GROUP BY c.id
+       ORDER BY c.id DESC
+       LIMIT 6`,
     )
     .all(user.id) as CollectionSummary[];
 
@@ -98,86 +86,53 @@ export default async function PersonalPage() {
     collections.length > 0
       ? (db
           .prepare(
-            `
-      SELECT
-        ci.collection_id,
-        ci.position,
-        ci.char,
-        g.id AS glyph_id,
-        g.author,
-        g.script_type,
-        g.work_title,
-        g.image_url,
-        g.thumbnail_url,
-        g.owner_user_id,
-        g.visibility,
-        ${glyphStatsSelectSql()}
-      FROM collection_items ci
-      JOIN glyphs g ON g.id = ci.glyph_id
-      ${glyphStatsJoinSql("g")}
-      WHERE ci.collection_id IN (${collections.map(() => "?").join(", ")})
-      ORDER BY ci.collection_id DESC, ci.position ASC
-    `,
+            `SELECT
+              ci.collection_id, ci.position, ci.char,
+              g.id AS glyph_id, g.author, g.script_type, g.work_title,
+              g.image_url, g.thumbnail_url, g.owner_user_id, g.visibility,
+              ${glyphStatsSelectSql()}
+             FROM collection_items ci
+             JOIN glyphs g ON g.id = ci.glyph_id
+             ${glyphStatsJoinSql("g")}
+             WHERE ci.collection_id IN (${collections.map(() => "?").join(", ")})
+             ORDER BY ci.collection_id DESC, ci.position ASC`,
           )
-          .all(
-            user.id,
-            ...collections.map((collection) => collection.id),
-          ) as CollectionItemPreview[])
+          .all(user.id, ...collections.map((c) => c.id)) as CollectionItemPreview[])
       : [];
 
   const securedItemRows = itemRows.map((item) => ({
     ...item,
     image_url:
       glyphImageUrlForAccess(
-        {
-          id: item.glyph_id,
-          owner_user_id: item.owner_user_id,
-          visibility: item.visibility,
-          image_url: item.image_url,
-          thumbnail_url: item.thumbnail_url,
-        },
+        { id: item.glyph_id, owner_user_id: item.owner_user_id, visibility: item.visibility, image_url: item.image_url, thumbnail_url: item.thumbnail_url },
         "image",
       ) ?? item.image_url,
     thumbnail_url: glyphImageUrlForAccess(
-      {
-        id: item.glyph_id,
-        owner_user_id: item.owner_user_id,
-        visibility: item.visibility,
-        image_url: item.image_url,
-        thumbnail_url: item.thumbnail_url,
-      },
+      { id: item.glyph_id, owner_user_id: item.owner_user_id, visibility: item.visibility, image_url: item.image_url, thumbnail_url: item.thumbnail_url },
       "thumbnail",
     ),
   }));
 
-  const itemsByCollection = securedItemRows.reduce<
-    Record<number, CollectionItemPreview[]>
-  >((acc, item) => {
-    acc[item.collection_id] ??= [];
-    acc[item.collection_id].push(item);
-    return acc;
-  }, {});
+  const itemsByCollection = securedItemRows.reduce<Record<number, CollectionItemPreview[]>>(
+    (acc, item) => {
+      acc[item.collection_id] ??= [];
+      acc[item.collection_id].push(item);
+      return acc;
+    },
+    {},
+  );
 
   const glyphRows = db
     .prepare(
-      `
-    SELECT
-      g.id,
-      g.char,
-      g.author,
-      g.script_type,
-      g.work_title,
-      g.image_url,
-      g.thumbnail_url,
-      COALESCE(g.visibility, 'public') AS visibility,
-      g.created_at,
-      ${glyphStatsSelectSql()}
-    FROM glyphs g
-    ${glyphStatsJoinSql("g")}
-    WHERE g.owner_user_id = ?
-    ORDER BY g.id DESC
-    LIMIT 24
-  `,
+      `SELECT g.id, g.char, g.author, g.script_type, g.work_title,
+              g.image_url, g.thumbnail_url,
+              COALESCE(g.visibility, 'public') AS visibility,
+              g.created_at, ${glyphStatsSelectSql()}
+       FROM glyphs g
+       ${glyphStatsJoinSql("g")}
+       WHERE g.owner_user_id = ?
+       ORDER BY g.id DESC
+       LIMIT 24`,
     )
     .all(user.id, user.id) as {
     id: number;
@@ -200,165 +155,136 @@ export default async function PersonalPage() {
     author: glyph.author,
     scriptType: glyph.script_type,
     workTitle: glyph.work_title,
-    imageUrl:
-      glyphImageUrlForAccess({ ...glyph, owner_user_id: user.id }, "image") ??
-      glyph.image_url,
-    thumbnailUrl: glyphImageUrlForAccess(
-      { ...glyph, owner_user_id: user.id },
-      "thumbnail",
-    ),
+    imageUrl: glyphImageUrlForAccess({ ...glyph, owner_user_id: user.id }, "image") ?? glyph.image_url,
+    thumbnailUrl: glyphImageUrlForAccess({ ...glyph, owner_user_id: user.id }, "thumbnail"),
     visibility: glyph.visibility === "private" ? "private" : "public",
     likeCount: glyph.like_count,
     collectionCount: glyph.collection_count,
     createdAt: glyph.created_at,
   }));
 
+  const displayName = user.name || user.email.split("@")[0];
+  const sealChar = displayName.charAt(0).toUpperCase();
+
   return (
-    <main className="min-h-screen bg-stone-50 text-stone-900 pb-10">
-      <header className="sticky top-0 z-50 border-b border-stone-200 bg-[#fdfbf7]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-4">
-          <div className="flex min-w-0 items-center gap-3">
+    <main className="min-h-screen bg-stone-50 text-stone-900">
+
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-50 border-b border-stone-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
+          <Link href="/" className="flex items-center gap-3">
             <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
-            <div className="min-w-0">
-              <h1 className="font-serif text-xl font-bold tracking-widest text-stone-800 sm:text-2xl">
-                個人齋軒
-              </h1>
-              <p className="truncate text-xs font-serif text-stone-500 sm:text-sm">
-                我的書法旅程
-              </p>
+            <div>
+              <h1 className="font-serif text-xl font-bold sm:text-2xl">個人頁</h1>
+              <p className="text-xs text-stone-500 sm:text-sm">管理字圖與集字作品</p>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+          </Link>
+          <div className="flex items-center gap-2">
             <Link
               href="/"
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-stone-800 px-4 py-2 text-sm font-bold text-[#fdfbf7] hover:bg-stone-900 transition-colors"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
             >
               <ArrowLeft className="h-4 w-4" />
-              回首頁
+              <span className="hidden sm:inline">回首頁</span>
             </Link>
             <form action="/api/auth/logout?returnTo=/" method="post">
               <button
                 type="submit"
-                className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-800 hover:text-red-900 transition-colors"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
               >
                 <LogOut className="h-4 w-4" />
-                登出
+                <span className="hidden sm:inline">登出</span>
               </button>
             </form>
           </div>
         </div>
       </header>
 
-      {/* Hero Banner Section (Neo-Chinese Style) */}
-      <section className="relative mx-auto max-w-6xl px-3 py-6 sm:px-4 sm:py-10">
-        <div className="relative overflow-hidden bg-white p-6 sm:p-10 md:p-14 border border-stone-200 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-          {/* Abstract background decorative elements */}
-          <div className="absolute right-0 top-0 h-full w-1/3 bg-stone-50" />
-          <div className="absolute bottom-0 right-[30%] h-1/2 w-[1px] bg-stone-200" />
-          
-          <div className="relative z-10 flex flex-col items-start gap-8 md:flex-row md:items-end md:justify-between">
-            <div className="flex items-start gap-6 sm:gap-8">
-              {/* Modern abstract seal */}
-              <div className="flex shrink-0 items-center justify-center bg-red-800 px-3 py-6 sm:px-4 sm:py-8 shadow-md">
-                <span className="[writing-mode:vertical-rl] font-serif text-xl sm:text-2xl font-bold tracking-[0.3em] text-white">
-                  墨跡
+      <div className="mx-auto max-w-6xl space-y-4 px-3 py-4 sm:px-4 sm:py-6 sm:space-y-6">
+
+        {/* ── User info + stats card ── */}
+        <div className="rounded-2xl border border-stone-200 bg-white shadow-sm sm:rounded-3xl">
+
+          {/* User identity row */}
+          <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div className="flex items-center gap-4">
+              {/* Seal avatar */}
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-red-800 shadow-sm">
+                <span className="select-none font-serif text-2xl font-bold text-white">
+                  {sealChar}
                 </span>
               </div>
-              <div className="pt-2">
-                {/* Minimalist large typography */}
-                <h2 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-black tracking-widest text-stone-900 leading-tight">
-                  書房雅集
-                </h2>
-                <div className="mt-6 flex items-center gap-4">
-                  <div className="h-[1px] w-12 bg-red-800"></div>
-                  <p className="font-serif text-sm sm:text-base tracking-[0.2em] text-stone-500">
-                    {user.email}
-                  </p>
-                </div>
-                <div className="mt-8 flex flex-wrap gap-3">
-                  <Link
-                    href="/upload"
-                    className="group relative inline-flex min-h-12 items-center justify-center gap-2 overflow-hidden border border-stone-900 bg-stone-900 px-8 py-3 font-serif text-sm font-bold text-white transition-all hover:bg-stone-800"
-                  >
-                    <Upload className="h-4 w-4" />
-                    <span className="relative z-10 tracking-widest">獻曝字圖</span>
-                  </Link>
-                  <Link
-                    href="/collections"
-                    className="inline-flex min-h-12 items-center justify-center gap-2 border border-stone-200 bg-white px-8 py-3 font-serif text-sm font-bold text-stone-700 transition-colors hover:border-stone-400 hover:text-stone-900"
-                  >
-                    <Images className="h-4 w-4" />
-                    <span className="tracking-widest">總覽集字</span>
-                  </Link>
-                </div>
+              <div>
+                <p className="font-serif text-lg font-bold text-stone-800 sm:text-xl">
+                  {displayName}
+                </p>
+                <p className="text-sm text-stone-500">{user.email}</p>
               </div>
             </div>
-            
-            {/* User initial in modern layout */}
-            <div className="hidden md:block">
-              <div className="font-serif text-[140px] font-light leading-none text-stone-100 select-none pointer-events-none -mb-8">
-                {user.email ? user.email.charAt(0).toUpperCase() : "M"}
-              </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/upload"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white hover:bg-stone-900"
+              >
+                <Upload className="h-4 w-4" />
+                上傳字圖
+              </Link>
+              <Link
+                href="/collections"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
+              >
+                <Images className="h-4 w-4" />
+                集字作品
+              </Link>
             </div>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-2 divide-x divide-y divide-stone-100 border-t border-stone-100 sm:grid-cols-4 sm:divide-y-0">
+            {(
+              [
+                ["集字作品", stats.collection_count, "卷", "/me?tab=collections#tabs"],
+                ["上傳字圖", stats.glyph_count, "幀", "/me?tab=glyphs#tabs"],
+                ["公開字圖", stats.public_glyph_count, "幀", "/me?tab=glyphs#tabs"],
+                ["收到的讚", stats.received_like_count, "個", null],
+              ] as const
+            ).map(([label, value, unit, href]) => {
+              const inner = (
+                <>
+                  <span className="text-xs text-stone-500">{label}</span>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="font-serif text-2xl font-bold text-stone-800 sm:text-3xl">
+                      {value}
+                    </span>
+                    <span className="text-xs text-stone-400">{unit}</span>
+                  </div>
+                </>
+              );
+              return href ? (
+                <Link
+                  key={label}
+                  href={href}
+                  className="group flex flex-col items-center py-5 text-center transition-colors hover:bg-stone-50"
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div key={label} className="flex flex-col items-center py-5 text-center">
+                  {inner}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Stats Grid - Stark & Clean */}
-        <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {[
-            [
-              "藏帖作品",
-              stats.collection_count,
-              "卷",
-            ],
-            [
-              "錄入字圖",
-              stats.glyph_count,
-              "幀",
-            ],
-            [
-              "布施公開",
-              stats.public_glyph_count,
-              "幀",
-            ],
-            [
-              "共賞按讚",
-              stats.received_like_count,
-              "回",
-            ],
-          ].map(([label, value, unit], i) => (
-            <div
-              key={i}
-              className="group flex flex-col justify-between border border-stone-200 bg-white p-6 transition-all hover:border-stone-400"
-            >
-              <div className="font-serif text-sm font-medium tracking-widest text-stone-400 group-hover:text-red-800 transition-colors">
-                {label}
-              </div>
-              <div className="mt-8 flex items-baseline gap-2">
-                <span className="font-serif text-4xl sm:text-5xl font-light tracking-tighter text-stone-900">
-                  {value}
-                </span>
-                <span className="font-serif text-sm font-medium text-stone-400">
-                  {unit}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-3 sm:px-4">
-        <PersonalPageTabs
-          collectionsContent={
-            <div>
-              <div className="mb-4">
-                <p className="font-serif text-sm tracking-widest text-stone-500">
-                  案頭近期收錄之六卷集字。
-                </p>
-              </div>
-              {collections.length === 0 ? (
-                <div className="rounded-sm border border-dashed border-stone-300 p-8 text-center font-serif text-sm tracking-widest text-stone-500 bg-[#fdfbf7]">
-                  書案清空，尚無集字之作。
+        {/* ── Collections / Glyphs ── */}
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:rounded-3xl sm:p-6">
+          <PersonalPageTabs
+            defaultTab={defaultTab}
+            collectionsContent={
+              collections.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-stone-300 py-12 text-center text-sm text-stone-400">
+                  尚無集字作品，前往首頁開始集字吧。
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
@@ -367,64 +293,57 @@ export default async function PersonalPage() {
                     return (
                       <div
                         key={collection.id}
-                        className="rounded-sm border border-stone-200 bg-[#fdfbf7] p-4 shadow-sm transition-shadow hover:shadow-md"
+                        className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 transition-shadow hover:shadow-md"
                       >
-                        <div className="mb-4 flex items-start justify-between gap-3">
+                        <div className="flex items-start justify-between gap-3 bg-white px-4 py-3">
                           <div className="min-w-0">
-                            <h3 className="line-clamp-1 font-serif text-lg font-bold tracking-wider text-stone-800">
-                              {collection.title || "無名殘卷"}
+                            <h3 className="line-clamp-1 font-serif text-base font-bold text-stone-800">
+                              {collection.title || "未命名集字作品"}
                             </h3>
-                            <p className="mt-1 font-serif text-xs tracking-widest text-stone-500">
-                              {collection.created_at} ｜ {collection.item_count}{" "}
-                              字
+                            <p className="mt-0.5 text-xs text-stone-400">
+                              {collection.created_at} · {collection.item_count} 字
                             </p>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2">
+                          <div className="flex shrink-0 items-center gap-0.5">
                             <Link
                               href={`/collections/${collection.id}`}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-sm text-red-800 transition-colors hover:bg-red-50 hover:text-red-900 focus:outline-none focus:ring-2 focus:ring-red-800"
-                              aria-label={`閱覽 ${collection.title || "無名殘卷"}`}
-                              title="閱覽全卷"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-red-800"
+                              title="查看集字作品"
                             >
-                              <BookOpen className="h-5 w-5" />
+                              <BookOpen className="h-4 w-4" />
                             </Link>
                             <DeleteCollectionButton id={collection.id} />
                           </div>
                         </div>
-                        <CollectionPreviewGlyphs
-                          collectionId={collection.id}
-                          initialDirection={
-                            collection.display_direction === "vertical"
-                              ? "vertical"
-                              : "horizontal"
-                          }
-                          items={items}
-                          text={collection.text}
-                          isAuthenticated={true}
-                          likeReturnTo="/me"
-                        />
+                        <div className="p-3">
+                          <CollectionPreviewGlyphs
+                            collectionId={collection.id}
+                            initialDirection={
+                              collection.display_direction === "vertical"
+                                ? "vertical"
+                                : "horizontal"
+                            }
+                            items={items}
+                            text={collection.text}
+                            isAuthenticated={true}
+                            likeReturnTo="/me"
+                          />
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              )}
-            </div>
-          }
-          glyphsContent={
-            <div>
-              <div className="mb-4">
-                <p className="font-serif text-sm tracking-widest text-stone-500">
-                  檢視所錄字圖，可切換公開布施或私人典藏，亦可見賞閱與集字之數。
-                </p>
-              </div>
+              )
+            }
+            glyphsContent={
               <PersonalGlyphManager
                 initialGlyphs={personalGlyphs}
                 initialHasMore={glyphRows.length === 24}
               />
-            </div>
-          }
-        />
-      </section>
+            }
+          />
+        </div>
+      </div>
     </main>
   );
 }

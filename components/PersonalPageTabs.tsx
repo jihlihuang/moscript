@@ -6,39 +6,39 @@ import { BookOpen, ImageIcon } from "lucide-react";
 export function PersonalPageTabs({
   collectionsContent,
   glyphsContent,
+  defaultTab = "collections",
 }: {
   collectionsContent: React.ReactNode;
   glyphsContent: React.ReactNode;
+  defaultTab?: "collections" | "glyphs";
 }) {
-  const [activeTab, setActiveTab] = useState<"collections" | "glyphs">(
-    "collections",
-  );
+  const [activeTab, setActiveTab] = useState<"collections" | "glyphs">(defaultTab);
+
+  const tabs = [
+    { id: "collections" as const, label: "集字作品", icon: BookOpen },
+    { id: "glyphs" as const, label: "我的字圖", icon: ImageIcon },
+  ];
 
   return (
-    <div className="rounded-sm border border-stone-300 bg-[#faf8f5] p-6 shadow-md mt-6">
-      <div className="mb-6 flex flex-wrap gap-4 border-b border-stone-300 pb-4">
-        <button
-          onClick={() => setActiveTab("collections")}
-          className={`inline-flex items-center gap-2 px-4 py-2 font-serif text-base font-bold tracking-widest transition-colors ${
-            activeTab === "collections"
-              ? "border-b-2 border-red-800 text-red-900"
-              : "border-b-2 border-transparent text-stone-500 hover:text-stone-800"
-          }`}
-        >
-          <BookOpen className="h-5 w-5" />
-          集字卷軸
-        </button>
-        <button
-          onClick={() => setActiveTab("glyphs")}
-          className={`inline-flex items-center gap-2 px-4 py-2 font-serif text-base font-bold tracking-widest transition-colors ${
-            activeTab === "glyphs"
-              ? "border-b-2 border-red-800 text-red-900"
-              : "border-b-2 border-transparent text-stone-500 hover:text-stone-800"
-          }`}
-        >
-          <ImageIcon className="h-5 w-5" />
-          字圖珍藏
-        </button>
+    <div id="tabs">
+      <div className="mb-5 flex gap-1 border-b border-stone-200">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`relative flex items-center gap-2 px-1 pb-3 text-sm font-bold transition-colors mr-5 ${
+              activeTab === id
+                ? "text-stone-800"
+                : "text-stone-400 hover:text-stone-600"
+            }`}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {label}
+            {activeTab === id && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-700" />
+            )}
+          </button>
+        ))}
       </div>
       <div>
         {activeTab === "collections" && collectionsContent}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ChevronLeft, ChevronRight, Home } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Home } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { LogoMark } from "@/components/LogoMark";
@@ -138,6 +138,13 @@ export default async function PracticePage({ params, searchParams }: Params) {
                 </Link>
               </>
             )}
+            <Link
+              href={`/?q=${encodeURIComponent(glyph.char)}&addGlyphId=${glyph.id}`}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
+            >
+              <BookOpen className="h-4 w-4" />
+              加入集字
+            </Link>
             <Link
               href={collectionHref}
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
