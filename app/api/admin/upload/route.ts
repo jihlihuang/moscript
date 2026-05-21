@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const file = form.get("file");
+  const thumbnailFile = form.get("thumbnailFile");
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "請上傳圖片檔" }, { status: 400 });
@@ -33,18 +34,25 @@ export async function POST(req: NextRequest) {
   if ("error" in storedImage) {
     return NextResponse.json({ error: storedImage.error }, { status: 400 });
   }
+  const storedThumbnail = thumbnailFile instanceof File
+    ? await storeGlyphImage({ file: thumbnailFile, char, author, scriptType, workTitle })
+    : null;
+  if (storedThumbnail && "error" in storedThumbnail) {
+    return NextResponse.json({ error: storedThumbnail.error }, { status: 400 });
+  }
 
   const db = await getDb();
   const info = db.prepare(`
     INSERT INTO glyphs (
-      char, author, script_type, work_title, image_url, source, license, quality_score
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      char, author, script_type, work_title, image_url, thumbnail_url, source, license, quality_score
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     char,
     author || null,
     scriptType || null,
     workTitle || null,
     storedImage.imageUrl,
+    storedThumbnail && "imageUrl" in storedThumbnail ? storedThumbnail.imageUrl : null,
     source || "manual-upload",
     license || "non-commercial-research",
     qualityScore
@@ -53,12 +61,23 @@ export async function POST(req: NextRequest) {
   await logAdminAction(req, user, "glyph_upload", {
     targetType: "glyph",
     targetId: info.lastInsertRowid,
-    details: { char, author, scriptType, workTitle, source, license, imageUrl: storedImage.imageUrl, storage: storedImage.storage },
+    details: {
+      char,
+      author,
+      scriptType,
+      workTitle,
+      source,
+      license,
+      imageUrl: storedImage.imageUrl,
+      thumbnailUrl: storedThumbnail && "imageUrl" in storedThumbnail ? storedThumbnail.imageUrl : null,
+      storage: storedImage.storage,
+    },
   });
 
   return NextResponse.json({
     id: info.lastInsertRowid,
     imageUrl: storedImage.imageUrl,
+    thumbnailUrl: storedThumbnail && "imageUrl" in storedThumbnail ? storedThumbnail.imageUrl : null,
     blobName: storedImage.blobName,
     storage: storedImage.storage,
   });

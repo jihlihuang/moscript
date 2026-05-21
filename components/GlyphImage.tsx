@@ -4,6 +4,7 @@ export type GlyphLike = {
   id: number;
   char: string;
   imageUrl: string;
+  thumbnailUrl?: string | null;
   author?: string | null;
   scriptType?: string | null;
   workTitle?: string | null;
@@ -24,7 +25,7 @@ export function GlyphImage({
       style={containerClassName ? undefined : { width: size, height: size }}
     >
       <Image
-        src={glyph.imageUrl}
+        src={glyph.thumbnailUrl || glyph.imageUrl}
         alt={`${glyph.char}｜${glyph.author ?? "佚名"}`}
         width={size}
         height={size}

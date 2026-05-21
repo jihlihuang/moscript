@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Check, RefreshCw, Trash2 } from "lucide-react";
 import { GlyphImage } from "@/components/GlyphImage";
 
@@ -11,6 +12,7 @@ export type PersonalGlyph = {
   scriptType: string | null;
   workTitle: string | null;
   imageUrl: string;
+  thumbnailUrl: string | null;
   visibility: "public" | "private";
   likeCount: number;
   collectionCount: number;
@@ -23,14 +25,23 @@ function getScriptLabel(scriptType: string | null) {
   return scriptType?.trim() || unknownScriptLabel;
 }
 
-export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: PersonalGlyph[] }) {
+export function PersonalGlyphManager({
+  initialGlyphs,
+  initialHasMore = false,
+}: {
+  initialGlyphs: PersonalGlyph[];
+  initialHasMore?: boolean;
+}) {
   const [glyphs, setGlyphs] = useState(initialGlyphs);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [queryChar, setQueryChar] = useState("");
   const [queryAuthor, setQueryAuthor] = useState("");
   const [selectedScriptTypes, setSelectedScriptTypes] = useState<string[]>([]);
   const [queryWorkTitle, setQueryWorkTitle] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState<"all" | "public" | "private">("all");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const scriptTypeOptions = useMemo(
     () =>
@@ -57,6 +68,40 @@ export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: Persona
         : [...current, scriptType]
     );
   }
+
+  async function loadMoreGlyphs() {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const params = new URLSearchParams({
+        offset: String(glyphs.length),
+        limit: "24",
+      });
+      const res = await fetch(`/api/me/glyphs?${params.toString()}`);
+      const json = (await res.json()) as { glyphs?: PersonalGlyph[]; hasMore?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "讀取更多字圖失敗");
+      setGlyphs((items) => [...items, ...(json.glyphs ?? [])]);
+      setHasMore(Boolean(json.hasMore));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "讀取更多字圖失敗");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
+
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasMore) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        void loadMoreGlyphs();
+      }
+    }, { rootMargin: "360px" });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [glyphs.length, hasMore, isLoadingMore]);
 
   async function updateVisibility(id: number, visibility: "public" | "private") {
     setBusyId(id);
@@ -200,15 +245,23 @@ export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: Persona
             讚 {glyph.likeCount}｜集字 {glyph.collectionCount}｜{glyph.createdAt}
           </div>
           <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-            <button
-              type="button"
-              onClick={() => updateVisibility(glyph.id, glyph.visibility === "public" ? "private" : "public")}
-              disabled={busyId === glyph.id}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busyId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-              改為{glyph.visibility === "public" ? "私人" : "公開"}
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                href={`/upload/edit/${glyph.id}`}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+              >
+                編輯
+              </Link>
+              <button
+                type="button"
+                onClick={() => updateVisibility(glyph.id, glyph.visibility === "public" ? "private" : "public")}
+                disabled={busyId === glyph.id}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busyId === glyph.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                {glyph.visibility === "public" ? "私人" : "公開"}
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => void deleteGlyph(glyph.id)}
@@ -222,6 +275,19 @@ export function PersonalGlyphManager({ initialGlyphs }: { initialGlyphs: Persona
           </div>
         </div>
       ))}
+          <div ref={loadMoreRef} className="col-span-full min-h-1" />
+        </div>
+      )}
+      {hasMore && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => void loadMoreGlyphs()}
+            disabled={isLoadingMore}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isLoadingMore ? "載入中..." : "載入更多"}
+          </button>
         </div>
       )}
     </div>

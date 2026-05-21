@@ -33,6 +33,9 @@ type ScriptResponse = {
   scripts: { label: string; count: number }[];
 };
 
+type ResultScope = "library" | "all" | "liked" | "personal" | "public";
+type ResultSort = "popular" | "newest" | "author" | "script";
+
 type CurrentUser = {
   id: string;
   email: string;
@@ -79,8 +82,10 @@ export default function FrontStagePage() {
   const [q, setQ] = useState("");
   const [isComposingQuery, setIsComposingQuery] = useState(false);
   const [author, setAuthor] = useState("");
-  const [scriptType, setScriptType] = useState("");
+  const [selectedScriptTypes, setSelectedScriptTypes] = useState<string[]>([]);
   const [availableScripts, setAvailableScripts] = useState<string[]>([]);
+  const [resultScope, setResultScope] = useState<ResultScope>("library");
+  const [resultSort, setResultSort] = useState<ResultSort>("popular");
   const [data, setData] = useState<ApiResult | null>(null);
   const [selected, setSelected] = useState<SelectedGlyph[]>([]);
   const [activePosition, setActivePosition] = useState<number | null>(null);
@@ -90,7 +95,6 @@ export default function FrontStagePage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isAdminVisible, setIsAdminVisible] = useState(false);
-  const [includePersonalGlyphs, setIncludePersonalGlyphs] = useState(false);
   const [logoClickCount, setLogoClickCount] = useState(0);
   const pendingSaveStartedRef = useRef(false);
   const collectionLoadStartedRef = useRef(false);
@@ -149,10 +153,7 @@ export default function FrontStagePage() {
     [activePosition, queryChars]
   );
 
-  const scriptFilters = useMemo(
-    () => ["", ...availableScripts],
-    [availableScripts]
-  );
+  const scriptFilters = useMemo(() => availableScripts, [availableScripts]);
   const saveResult = useMemo(() => {
     if (message.startsWith("已儲存：")) {
       return {
@@ -172,6 +173,30 @@ export default function FrontStagePage() {
     }
     return null;
   }, [message]);
+
+  const resultScopeOptions: { value: ResultScope; label: string }[] = [
+    { value: "library", label: "字庫" },
+    { value: "all", label: "全部可用" },
+    { value: "liked", label: "已按讚" },
+    { value: "personal", label: "個人字圖" },
+    { value: "public", label: "公開字圖" },
+  ];
+  const resultSortOptions: { value: ResultSort; label: string }[] = [
+    { value: "popular", label: "熱門" },
+    { value: "newest", label: "最新" },
+    { value: "author", label: "作者" },
+    { value: "script", label: "書體" },
+  ];
+
+  function toggleScriptFilter(script: string) {
+    const next = selectedScriptTypes.includes(script)
+      ? selectedScriptTypes.filter((item) => item !== script)
+      : [...selectedScriptTypes, script];
+    setSelectedScriptTypes(next);
+    if (onlyChinese(q)) {
+      void searchGlyphs(next, true);
+    }
+  }
 
   useEffect(() => {
     async function loadCurrentUser() {
@@ -226,25 +251,31 @@ export default function FrontStagePage() {
     async function loadAvailableScripts() {
       if (queryChars.length === 0) {
         setAvailableScripts([]);
-        setScriptType("");
+        setSelectedScriptTypes([]);
         return;
       }
 
       const params = new URLSearchParams({ q });
       if (author) params.set("author", author);
-      if (includePersonalGlyphs) params.set("includePersonal", "1");
+      params.set("resultScope", resultScope);
 
       const res = await fetch(`/api/glyphs/scripts?${params.toString()}`);
       const json = (await res.json()) as ScriptResponse;
       const scripts = sortScriptLabels(json.scripts.map((script) => script.label));
       setAvailableScripts(scripts);
-      setScriptType((current) => (current && !scripts.includes(current) ? "" : current));
+      setSelectedScriptTypes((current) => current.filter((script) => scripts.includes(script)));
     }
 
     void loadAvailableScripts();
-  }, [author, includePersonalGlyphs, q, queryChars.length]);
+  }, [author, q, queryChars.length, resultScope]);
 
-  async function searchGlyphs(nextScriptType = scriptType, preservePosition = false, nextQ = q, nextIncludePersonal = includePersonalGlyphs) {
+  async function searchGlyphs(
+    nextScriptTypes = selectedScriptTypes,
+    preservePosition = false,
+    nextQ = q,
+    nextResultScope = resultScope,
+    nextResultSort = resultSort
+  ) {
     const cleanedQ = onlyChinese(nextQ);
     if (cleanedQ !== q) {
       setQ(cleanedQ);
@@ -256,8 +287,9 @@ export default function FrontStagePage() {
     setMessage("");
     const params = new URLSearchParams({ q: cleanedQ });
     if (author) params.set("author", author);
-    if (nextScriptType) params.set("scriptType", nextScriptType);
-    if (nextIncludePersonal) params.set("includePersonal", "1");
+    nextScriptTypes.forEach((script) => params.append("scriptTypes", script));
+    params.set("resultScope", nextResultScope);
+    params.set("sort", nextResultSort);
 
     const res = await fetch(`/api/glyphs?${params.toString()}`);
     const json = (await res.json()) as ApiResult;
@@ -300,14 +332,14 @@ export default function FrontStagePage() {
   function toggleActivePosition(position: number) {
     setActivePosition((prev) => (prev === position ? null : position));
     if (!data || data.query !== onlyChinese(q)) {
-      void searchGlyphs(scriptType, true);
+      void searchGlyphs(selectedScriptTypes, true);
     }
   }
 
   function restoreWorkspaceFromPayload(payload: CollectionSavePayload) {
     setQ(payload.text);
     setAuthor(payload.author ?? "");
-    setScriptType(payload.scriptType ?? "");
+    setSelectedScriptTypes(payload.scriptType ? payload.scriptType.split(",").map((script) => script.trim()).filter(Boolean) : []);
     setSelected(payload.selectedGlyphs ?? []);
     setActivePosition(null);
   }
@@ -347,13 +379,14 @@ export default function FrontStagePage() {
       const loadedScriptType = selectedGlyphs[0]?.scriptType ?? "";
       setQ(json.collection.text);
       setAuthor("");
-      setScriptType(loadedScriptType);
+      setSelectedScriptTypes(loadedScriptType ? [loadedScriptType] : []);
       setSelected(selectedGlyphs);
       setActivePosition(null);
 
       const params = new URLSearchParams({ q: onlyChinese(json.collection.text) });
-      if (loadedScriptType) params.set("scriptType", loadedScriptType);
-      if (includePersonalGlyphs) params.set("includePersonal", "1");
+      if (loadedScriptType) params.append("scriptTypes", loadedScriptType);
+      params.set("resultScope", resultScope);
+      params.set("sort", resultSort);
       const glyphsRes = await fetch(`/api/glyphs?${params.toString()}`);
       const glyphsJson = (await glyphsRes.json()) as ApiResult;
       setData(glyphsJson);
@@ -405,7 +438,7 @@ export default function FrontStagePage() {
       title: q,
       text: q,
       author,
-      scriptType,
+      scriptType: selectedScriptTypes.join(","),
       selectedGlyphs: selected,
       items: selected.map((item) => ({
         glyphId: item.id,
@@ -539,25 +572,57 @@ export default function FrontStagePage() {
                 {loading ? "搜尋中" : "搜尋"}
               </button>
             </form>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-600">
-              <span>查詢範圍</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !includePersonalGlyphs;
-                  setIncludePersonalGlyphs(next);
-                  if (onlyChinese(q)) {
-                    void searchGlyphs(scriptType, true, q, next);
-                  }
-                }}
-                className={`rounded-xl px-3 py-2 text-sm font-bold ${
-                  includePersonalGlyphs
-                    ? "bg-red-800 text-white"
-                    : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
-                }`}
-              >
-                {includePersonalGlyphs ? "已包含個人字圖" : "不含個人字圖"}
-              </button>
+            <div className="mt-3 grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-stone-700">查詢範圍</span>
+                {resultScopeOptions.map((option) => {
+                  const active = resultScope === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setResultScope(option.value);
+                        if (onlyChinese(q)) {
+                          void searchGlyphs(selectedScriptTypes, true, q, option.value, resultSort);
+                        }
+                      }}
+                      className={`rounded-xl px-3 py-2 text-sm font-bold ${
+                        active
+                          ? "bg-red-800 text-white"
+                          : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-stone-700">排序</span>
+                {resultSortOptions.map((option) => {
+                  const active = resultSort === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setResultSort(option.value);
+                        if (onlyChinese(q)) {
+                          void searchGlyphs(selectedScriptTypes, true, q, resultScope, option.value);
+                        }
+                      }}
+                      className={`rounded-xl px-3 py-2 text-sm font-bold ${
+                        active
+                          ? "bg-stone-800 text-white"
+                          : "border border-stone-300 bg-white text-stone-700 hover:border-red-700"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 sm:mt-4">
               <div className="mb-3 flex items-start justify-between gap-3 sm:items-center">
@@ -690,25 +755,39 @@ export default function FrontStagePage() {
             </div>
             <div className="mt-3 overflow-x-auto">
               <div className="inline-flex min-w-full gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedScriptTypes([]);
+                    void searchGlyphs([]);
+                  }}
+                  disabled={loading && selectedScriptTypes.length === 0}
+                  aria-pressed={selectedScriptTypes.length === 0}
+                  className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
+                    selectedScriptTypes.length === 0
+                      ? "bg-red-800 text-white"
+                      : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
+                  }`}
+                >
+                  全部書體
+                </button>
                 {scriptFilters.map((script) => {
-                  const active = scriptType === script;
+                  const active = selectedScriptTypes.includes(script);
                   return (
                     <button
-                      key={script || "all"}
+                      key={script}
                       type="button"
-                      onClick={() => {
-                        setScriptType(script);
-                        void searchGlyphs(script);
-                      }}
+                      onClick={() => toggleScriptFilter(script)}
                       disabled={loading && active}
                       aria-pressed={active}
-                      className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
+                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
                         active
                           ? "bg-red-800 text-white"
                           : "text-stone-500 hover:bg-stone-200 hover:text-stone-800"
                       }`}
                     >
-                      {script || "全部書體"}
+                      {active ? <Check className="h-3.5 w-3.5" /> : null}
+                      {script}
                     </button>
                   );
                 })}

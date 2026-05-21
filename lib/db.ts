@@ -17,6 +17,7 @@ export type GlyphRow = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  thumbnail_url: string | null;
   source: string | null;
   license: string | null;
   quality_score: number;
@@ -79,6 +80,7 @@ export function initSchema(db: Database.Database) {
       script_type TEXT,
       work_title TEXT,
       image_url TEXT NOT NULL UNIQUE,
+      thumbnail_url TEXT,
       source TEXT,
       license TEXT,
       quality_score INTEGER DEFAULT 0,
@@ -186,6 +188,9 @@ export function initSchema(db: Database.Database) {
   }
   if (!glyphColumnNames.has("visibility")) {
     db.prepare("ALTER TABLE glyphs ADD COLUMN visibility TEXT DEFAULT 'public'").run();
+  }
+  if (!glyphColumnNames.has("thumbnail_url")) {
+    db.prepare("ALTER TABLE glyphs ADD COLUMN thumbnail_url TEXT").run();
   }
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_owner_user_id ON glyphs(owner_user_id)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_visibility ON glyphs(visibility)").run();

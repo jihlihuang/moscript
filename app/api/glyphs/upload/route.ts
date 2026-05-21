@@ -14,6 +14,7 @@ export async function POST(req: NextRequest) {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "請上傳圖片檔" }, { status: 400 });
   }
+  const thumbnailFile = form.get("thumbnailFile");
 
   const char = onlyChinese(String(form.get("char") ?? "")).slice(0, 1);
   if (!char) {
@@ -32,19 +33,26 @@ export async function POST(req: NextRequest) {
   if ("error" in storedImage) {
     return NextResponse.json({ error: storedImage.error }, { status: 400 });
   }
+  const storedThumbnail = thumbnailFile instanceof File
+    ? await storeGlyphImage({ file: thumbnailFile, char, author, scriptType, workTitle })
+    : null;
+  if (storedThumbnail && "error" in storedThumbnail) {
+    return NextResponse.json({ error: storedThumbnail.error }, { status: 400 });
+  }
 
   const db = await getDb();
   const info = db.prepare(`
     INSERT INTO glyphs (
-      char, author, script_type, work_title, image_url, source, license, quality_score,
+      char, author, script_type, work_title, image_url, thumbnail_url, source, license, quality_score,
       owner_user_id, owner_user_email, owner_user_name, visibility
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     char,
     author || user.name || null,
     scriptType || null,
     workTitle || null,
     storedImage.imageUrl,
+    storedThumbnail && "imageUrl" in storedThumbnail ? storedThumbnail.imageUrl : null,
     source || "personal-upload",
     license || "user-submitted",
     Number.isFinite(qualityScore) ? qualityScore : 0,
@@ -59,6 +67,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     id: info.lastInsertRowid,
     imageUrl: storedImage.imageUrl,
+    thumbnailUrl: storedThumbnail && "imageUrl" in storedThumbnail ? storedThumbnail.imageUrl : null,
     blobName: storedImage.blobName,
     storage: storedImage.storage,
     visibility,

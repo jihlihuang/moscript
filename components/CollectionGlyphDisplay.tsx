@@ -14,6 +14,7 @@ type CollectionGlyphItem = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  thumbnail_url?: string | null;
   like_count?: number;
   collection_count?: number;
   liked_by_me?: number;
@@ -34,6 +35,7 @@ export function CollectionGlyphDisplay({
 }) {
   const [direction, setDirection] = useCollectionDirectionPreference(collectionId, initialDirection);
   const glyphSizeClass = "h-[clamp(132px,34vw,220px)] w-[clamp(132px,34vw,220px)] sm:h-[clamp(180px,20vw,240px)] sm:w-[clamp(180px,20vw,240px)]";
+  const itemHref = (item: CollectionGlyphItem) => `/practice/${item.glyph_id}?collectionId=${collectionId}&position=${item.position}`;
 
   return (
     <div>
@@ -75,7 +77,7 @@ export function CollectionGlyphDisplay({
               {items.map((item) => (
                 <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 snap-center space-y-2">
                   <Link
-                    href={`/practice/${item.glyph_id}`}
+                    href={itemHref(item)}
                     className="block rounded-xl transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
                     title={`練習 ${item.char}`}
                   >
@@ -86,6 +88,7 @@ export function CollectionGlyphDisplay({
                       id: item.glyph_id,
                       char: item.char,
                       imageUrl: item.image_url,
+                      thumbnailUrl: item.thumbnail_url,
                       author: item.author,
                       scriptType: item.script_type,
                       workTitle: item.work_title,
@@ -114,7 +117,7 @@ export function CollectionGlyphDisplay({
                 {items.map((item) => (
                   <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 snap-center space-y-2 [direction:ltr]">
                     <Link
-                      href={`/practice/${item.glyph_id}`}
+                      href={itemHref(item)}
                       className="block rounded-xl transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
                       title={`練習 ${item.char}`}
                     >
@@ -125,6 +128,7 @@ export function CollectionGlyphDisplay({
                         id: item.glyph_id,
                         char: item.char,
                         imageUrl: item.image_url,
+                        thumbnailUrl: item.thumbnail_url,
                         author: item.author,
                         scriptType: item.script_type,
                         workTitle: item.work_title,

@@ -14,6 +14,7 @@ type PreviewGlyph = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  thumbnail_url?: string | null;
   like_count?: number;
   collection_count?: number;
   liked_by_me?: number;
@@ -40,6 +41,8 @@ export function CollectionPreviewGlyphs({
   const horizontalItems = items.slice(0, 8);
   const verticalItems = items.slice(0, 6);
   const previewGlyphClassName = "h-[clamp(96px,18vw,136px)] w-[clamp(96px,18vw,136px)]";
+  const itemHref = (item: PreviewGlyph) =>
+    detailHref ?? `/practice/${item.glyph_id}?collectionId=${collectionId}&position=${item.position}`;
 
   return (
     <div className="relative z-20 mb-4">
@@ -92,7 +95,7 @@ export function CollectionPreviewGlyphs({
               {horizontalItems.map((item) => (
                 <div key={`${item.position}-${item.glyph_id}`} className="space-y-1">
                   <Link
-                    href={detailHref ?? `/practice/${item.glyph_id}`}
+                    href={itemHref(item)}
                     className="rounded-xl focus:outline-none focus:ring-2 focus:ring-red-800"
                     title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
                     onClick={(event) => {
@@ -105,7 +108,8 @@ export function CollectionPreviewGlyphs({
                       glyph={{
                         id: item.glyph_id,
                         char: item.char,
-                        imageUrl: item.image_url,
+                      imageUrl: item.image_url,
+                      thumbnailUrl: item.thumbnail_url,
                         author: item.author,
                         scriptType: item.script_type,
                         workTitle: item.work_title,
@@ -137,7 +141,7 @@ export function CollectionPreviewGlyphs({
                 {verticalItems.map((item) => (
                   <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 snap-center space-y-1 [direction:ltr]">
                     <Link
-                      href={detailHref ?? `/practice/${item.glyph_id}`}
+                      href={itemHref(item)}
                       className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-red-800"
                       title={detailHref ? `查看 ${text}` : `練習 ${item.char}`}
                       onClick={(event) => {
@@ -151,6 +155,7 @@ export function CollectionPreviewGlyphs({
                           id: item.glyph_id,
                           char: item.char,
                           imageUrl: item.image_url,
+                          thumbnailUrl: item.thumbnail_url,
                           author: item.author,
                           scriptType: item.script_type,
                           workTitle: item.work_title,

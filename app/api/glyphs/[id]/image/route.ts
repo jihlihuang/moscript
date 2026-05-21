@@ -12,7 +12,6 @@ type Params = {
 export async function POST(req: NextRequest, { params }: Params) {
   const user = requireRequestUser(req);
   if (!user) return unauthorized();
-  if (!isAdminAllowed(user)) return forbidden();
 
   const { id } = await params;
   const db = await getDb();
@@ -20,9 +19,13 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!glyph) {
     return NextResponse.json({ error: "找不到字圖" }, { status: 404 });
   }
+  const isOwner = glyph.owner_user_id === user.id;
+  const isAdmin = isAdminAllowed(user);
+  if (!isAdmin && !isOwner) return forbidden();
 
   const form = await req.formData();
   const file = form.get("file");
+  const thumbnailFile = form.get("thumbnailFile");
   const hasNewImage = file instanceof File && file.size > 0 && Boolean(file.name);
 
   const char = onlyChinese(String(form.get("char") ?? glyph.char)).slice(0, 1);
@@ -40,11 +43,18 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (storedImage && "error" in storedImage) {
     return NextResponse.json({ error: storedImage.error }, { status: 400 });
   }
+  const storedThumbnail = hasNewImage && thumbnailFile instanceof File
+    ? await storeGlyphImage({ file: thumbnailFile, char, author, scriptType, workTitle })
+    : null;
+  if (storedThumbnail && "error" in storedThumbnail) {
+    return NextResponse.json({ error: storedThumbnail.error }, { status: 400 });
+  }
   const imageUrl = storedImage ? storedImage.imageUrl : glyph.image_url;
+  const thumbnailUrl = storedThumbnail && "imageUrl" in storedThumbnail ? storedThumbnail.imageUrl : glyph.thumbnail_url;
 
   db.prepare(`
     UPDATE glyphs
-    SET char = ?, author = ?, script_type = ?, work_title = ?, source = ?, license = ?, quality_score = ?, image_url = ?
+    SET char = ?, author = ?, script_type = ?, work_title = ?, source = ?, license = ?, quality_score = ?, image_url = ?, thumbnail_url = ?
     WHERE id = ?
   `).run(
     char,
@@ -55,33 +65,41 @@ export async function POST(req: NextRequest, { params }: Params) {
     license || null,
     Number.isFinite(qualityScore) ? qualityScore : glyph.quality_score,
     imageUrl,
+    thumbnailUrl,
     id
   );
   await syncDbToBlob();
   if (storedImage && imageUrl !== glyph.image_url) {
     await deleteGlyphImageByUrl(glyph.image_url);
   }
-  await logAdminAction(req, user, hasNewImage ? "glyph_image_replace" : "glyph_update", {
-    targetType: "glyph",
-    targetId: id,
-    details: {
-      previousImageUrl: glyph.image_url,
-      imageUrl,
-      blobName: storedImage && "blobName" in storedImage ? storedImage.blobName : null,
-      storage: storedImage && "storage" in storedImage ? storedImage.storage : null,
-      char,
-      author: author || null,
-      scriptType: scriptType || null,
-      workTitle: workTitle || null,
-      source: source || null,
-      license: license || null,
-      qualityScore: Number.isFinite(qualityScore) ? qualityScore : glyph.quality_score,
-    },
-  });
+  if (storedThumbnail && thumbnailUrl !== glyph.thumbnail_url) {
+    await deleteGlyphImageByUrl(glyph.thumbnail_url);
+  }
+  if (isAdmin) {
+    await logAdminAction(req, user, hasNewImage ? "glyph_image_replace" : "glyph_update", {
+      targetType: "glyph",
+      targetId: id,
+      details: {
+        previousImageUrl: glyph.image_url,
+        imageUrl,
+        thumbnailUrl,
+        blobName: storedImage && "blobName" in storedImage ? storedImage.blobName : null,
+        storage: storedImage && "storage" in storedImage ? storedImage.storage : null,
+        char,
+        author: author || null,
+        scriptType: scriptType || null,
+        workTitle: workTitle || null,
+        source: source || null,
+        license: license || null,
+        qualityScore: Number.isFinite(qualityScore) ? qualityScore : glyph.quality_score,
+      },
+    });
+  }
 
   return NextResponse.json({
     ok: true,
     imageUrl,
+    thumbnailUrl,
     blobName: storedImage && "blobName" in storedImage ? storedImage.blobName : null,
     storage: storedImage && "storage" in storedImage ? storedImage.storage : null,
   });

@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
   const author = params.get("author") ?? "";
   const includePersonal = params.get("includePersonal") === "1";
   const includeAllPersonal = params.get("includeAllPersonal") === "1";
+  const resultScopeParam = params.get("resultScope");
   const user = requireRequestUser(req);
 
   return NextResponse.json({
@@ -21,6 +22,10 @@ export async function GET(req: NextRequest) {
       includePersonal,
       includeAllPersonal: Boolean(includeAllPersonal && user && isAdminAllowed(user)),
       userId: user?.id ?? null,
+      resultScope:
+        resultScopeParam === "all" || resultScopeParam === "liked" || resultScopeParam === "personal" || resultScopeParam === "public"
+          ? resultScopeParam
+          : "library",
     }),
   });
 }

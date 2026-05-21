@@ -49,6 +49,15 @@ export function isAllowedUploadImage(file: File) {
 }
 
 type ImageBounds = { x: number; y: number; width: number; height: number };
+type UploadProcessOptions = {
+  edgeSoftness: number;
+  inkStrength: number;
+};
+
+const defaultUploadProcessOptions: UploadProcessOptions = {
+  edgeSoftness: 58,
+  inkStrength: 62,
+};
 
 function getLuminance(red: number, green: number, blue: number) {
   return red * 0.299 + green * 0.587 + blue * 0.114;
@@ -268,9 +277,20 @@ function smoothStep(edge0: number, edge1: number, value: number) {
   return t * t * (3 - 2 * t);
 }
 
-function refineInkCanvas(ctx: CanvasRenderingContext2D, width: number, height: number) {
+function refineInkCanvas(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  options: UploadProcessOptions = defaultUploadProcessOptions
+) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const pixels = imageData.data;
+  const softness = Math.max(0, Math.min(1, options.edgeSoftness / 100));
+  const strength = Math.max(0, Math.min(1, options.inkStrength / 100));
+  const edgeStart = 0.06 + softness * 0.08;
+  const edgeEnd = 0.3 + softness * 0.28;
+  const gamma = 1.02 - strength * 0.28 + softness * 0.1;
+  const coreMinimumInk = minimumRenderedInk * (0.7 + strength * 0.42);
 
   for (let index = 0; index < pixels.length; index += 4) {
     const luminance = getLuminance(pixels[index], pixels[index + 1], pixels[index + 2]);
@@ -278,9 +298,9 @@ function refineInkCanvas(ctx: CanvasRenderingContext2D, width: number, height: n
     let enhancedInk = 0;
     if (ink > 8) {
       const density = Math.max(0, Math.min(1, (ink - 8) / 247));
-      const edgeFeather = smoothStep(0.1, 0.42, density);
-      const tonalInk = 255 * Math.pow(density, 0.86);
-      const coreInk = minimumRenderedInk * edgeFeather;
+      const edgeFeather = smoothStep(edgeStart, edgeEnd, density);
+      const tonalInk = 255 * Math.pow(density, gamma) * (0.86 + strength * 0.24);
+      const coreInk = coreMinimumInk * edgeFeather;
       enhancedInk = Math.max(tonalInk, coreInk);
     }
     const value = Math.max(0, Math.min(255, Math.round(255 - enhancedInk)));
@@ -493,7 +513,14 @@ function getMaskBounds(mask: Uint8Array, width: number, height: number) {
   };
 }
 
-function drawTrimmedInk(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, inkLayer: Uint8Array, width: number, height: number) {
+function drawTrimmedInk(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  inkLayer: Uint8Array,
+  width: number,
+  height: number,
+  options: UploadProcessOptions = defaultUploadProcessOptions
+) {
   const bounds = getMaskBounds(inkLayer, width, height);
   if (!bounds) return false;
 
@@ -532,11 +559,11 @@ function drawTrimmedInk(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(sourceCanvas, bounds.x, bounds.y, bounds.width, bounds.height, drawX, drawY, drawWidth, drawHeight);
-  refineInkCanvas(ctx, outputWidth, outputHeight);
+  refineInkCanvas(ctx, outputWidth, outputHeight, options);
   return true;
 }
 
-export function imageToBlackWhitePng(file: File) {
+export function imageToBlackWhitePng(file: File, options: UploadProcessOptions = defaultUploadProcessOptions) {
   return new Promise<File>((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
     const image = new window.Image();
@@ -575,7 +602,7 @@ export function imageToBlackWhitePng(file: File) {
         width: drawWidth,
         height: drawHeight,
       });
-      if (!drawTrimmedInk(canvas, ctx, inkLayer, width, height)) {
+      if (!drawTrimmedInk(canvas, ctx, inkLayer, width, height, options)) {
         for (let index = 0; index < pixels.length; index += 4) {
           const ink = inkLayer[index / 4] ? Math.max(minimumRenderedInk, inkLayer[index / 4]) : 0;
           const value = 255 - ink;
@@ -585,6 +612,7 @@ export function imageToBlackWhitePng(file: File) {
           pixels[index + 3] = 255;
         }
         ctx.putImageData(imageData, 0, 0);
+        refineInkCanvas(ctx, width, height, options);
       }
 
       canvas.toBlob((blob) => {
@@ -614,6 +642,48 @@ function canvasToPngFile(canvas: HTMLCanvasElement, fileName: string) {
       }
       resolve(new File([blob], fileName, { type: "image/png" }));
     }, "image/png");
+  });
+}
+
+function imageFileToThumbnailPng(file: File, fileName: string) {
+  return new Promise<File>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const size = 256;
+      const sourceWidth = Math.max(1, image.naturalWidth || image.width);
+      const sourceHeight = Math.max(1, image.naturalHeight || image.height);
+      const scale = Math.min(size / sourceWidth, size / sourceHeight);
+      const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("無法產生縮圖"));
+        return;
+      }
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, size, size);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(image, Math.round((size - drawWidth) / 2), Math.round((size - drawHeight) / 2), drawWidth, drawHeight);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("無法產生縮圖"));
+          return;
+        }
+        resolve(new File([blob], fileName, { type: "image/png" }));
+      }, "image/png");
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("無法讀取縮圖來源"));
+    };
+    image.src = objectUrl;
   });
 }
 
@@ -1262,6 +1332,7 @@ export function AdminGlyphUploadForm({
   const successToastTimerRef = useRef<number | null>(null);
   const uploadUndoStackRef = useRef<ImageData[]>([]);
   const batchEditUndoStackRef = useRef<ImageData[]>([]);
+  const uploadProcessRequestRef = useRef(0);
   const isReplacingGlyph = Boolean(replaceGlyph);
   const [uploadMode, setUploadMode] = useState<"single" | "batch">("single");
   const [uploadChar, setUploadChar] = useState("");
@@ -1280,7 +1351,11 @@ export function AdminGlyphUploadForm({
   const [isProcessingUploadImage, setIsProcessingUploadImage] = useState(false);
   const [processedUploadFile, setProcessedUploadFile] = useState<File | null>(null);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState("");
+  const [uploadSourceFile, setUploadSourceFile] = useState<File | null>(null);
+  const [uploadOriginalPreviewUrl, setUploadOriginalPreviewUrl] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
+  const [uploadEdgeSoftness, setUploadEdgeSoftness] = useState(defaultUploadProcessOptions.edgeSoftness);
+  const [uploadInkStrength, setUploadInkStrength] = useState(defaultUploadProcessOptions.inkStrength);
   const [uploadEraserSize, setUploadEraserSize] = useState(44);
   const [isUploadEditing, setIsUploadEditing] = useState(false);
   const [isErasingUploadPreview, setIsErasingUploadPreview] = useState(false);
@@ -1302,13 +1377,20 @@ export function AdminGlyphUploadForm({
   const batchSourceFileRef = useRef<File | null>(null);
 
   function clearUploadImage() {
+    uploadProcessRequestRef.current += 1;
     if (uploadPreviewUrl) {
       URL.revokeObjectURL(uploadPreviewUrl);
     }
+    if (uploadOriginalPreviewUrl) {
+      URL.revokeObjectURL(uploadOriginalPreviewUrl);
+    }
     setProcessedUploadFile(null);
     setUploadPreviewUrl("");
+    setUploadSourceFile(null);
+    setUploadOriginalPreviewUrl("");
     setUploadFileName("");
     setUploadPreviewDimensions(null);
+    setIsProcessingUploadImage(false);
     setIsUploadEditing(false);
     setIsErasingUploadPreview(false);
     isErasingUploadPreviewRef.current = false;
@@ -1316,6 +1398,33 @@ export function AdminGlyphUploadForm({
     setUploadUndoCount(0);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+  }
+
+  async function processUploadImage(file: File, options: UploadProcessOptions) {
+    const requestId = uploadProcessRequestRef.current + 1;
+    uploadProcessRequestRef.current = requestId;
+    setIsProcessingUploadImage(true);
+    setMessage("正在轉成黑白預覽...");
+    try {
+      const nextFile = await imageToBlackWhitePng(file, options);
+      if (requestId !== uploadProcessRequestRef.current) return;
+      const nextPreviewUrl = URL.createObjectURL(nextFile);
+      setProcessedUploadFile(nextFile);
+      setUploadPreviewUrl((currentUrl) => {
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        return nextPreviewUrl;
+      });
+      uploadUndoStackRef.current = [];
+      setUploadUndoCount(0);
+      setMessage("");
+    } catch (error) {
+      if (requestId !== uploadProcessRequestRef.current) return;
+      setMessage(error instanceof Error ? error.message : "圖片處理失敗");
+    } finally {
+      if (requestId === uploadProcessRequestRef.current) {
+        setIsProcessingUploadImage(false);
+      }
     }
   }
 
@@ -1597,6 +1706,8 @@ export function AdminGlyphUploadForm({
         formData.set("qualityScore", uploadQualityScore);
         formData.set("visibility", uploadVisibility);
         formData.set("file", item.file, item.file.name);
+        const thumbnailFile = await imageFileToThumbnailPng(item.file, `${fileNameWithoutExtension(item.file.name)}_thumb.png`);
+        formData.set("thumbnailFile", thumbnailFile, thumbnailFile.name);
 
         const res = await fetch(uploadEndpoint, {
           method: "POST",
@@ -1656,8 +1767,11 @@ export function AdminGlyphUploadForm({
       if (processedUploadFile && canvas) {
         const renderedFile = await canvasToPngFile(canvas, processedUploadFile.name);
         formData.set("file", renderedFile, renderedFile.name);
+        const thumbnailFile = await imageFileToThumbnailPng(renderedFile, `${fileNameWithoutExtension(renderedFile.name)}_thumb.png`);
+        formData.set("thumbnailFile", thumbnailFile, thumbnailFile.name);
       } else {
         formData.delete("file");
+        formData.delete("thumbnailFile");
       }
 
       const endpoint = replaceGlyph ? `/api/glyphs/${replaceGlyph.id}/image` : uploadEndpoint;
@@ -1710,23 +1824,22 @@ export function AdminGlyphUploadForm({
       return;
     }
 
-    setIsProcessingUploadImage(true);
-    setMessage("正在轉成黑白預覽...");
-    try {
-      const nextFile = await imageToBlackWhitePng(file);
-      setProcessedUploadFile(nextFile);
-      setUploadPreviewUrl(URL.createObjectURL(nextFile));
-      uploadUndoStackRef.current = [];
-      setUploadUndoCount(0);
-      setMessage("");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "圖片處理失敗");
-      e.target.value = "";
-      setUploadFileName("");
-    } finally {
-      setIsProcessingUploadImage(false);
-    }
+    setUploadSourceFile(file);
+    setUploadOriginalPreviewUrl(URL.createObjectURL(file));
   }
+
+  useEffect(() => {
+    if (!uploadSourceFile) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void processUploadImage(uploadSourceFile, {
+        edgeSoftness: uploadEdgeSoftness,
+        inkStrength: uploadInkStrength,
+      });
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [uploadSourceFile, uploadEdgeSoftness, uploadInkStrength]);
 
   function getUploadPreviewPoint(e: PointerEvent<HTMLCanvasElement>) {
     const canvas = uploadEditCanvasRef.current;
@@ -1841,6 +1954,14 @@ export function AdminGlyphUploadForm({
       }
     };
   }, [uploadPreviewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadOriginalPreviewUrl) {
+        URL.revokeObjectURL(uploadOriginalPreviewUrl);
+      }
+    };
+  }, [uploadOriginalPreviewUrl]);
 
   useEffect(() => {
     const canvas = uploadPreviewCanvasRef.current;
@@ -2239,36 +2360,87 @@ export function AdminGlyphUploadForm({
                 </span>
                 {isProcessingUploadImage && <RefreshCw className="h-4 w-4 animate-spin" />}
               </div>
-              <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white">
-                {uploadPreviewUrl ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={startUploadEdit}
-                      disabled={isUploading || isProcessingUploadImage}
-                      className="absolute right-2 top-2 z-10 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white/90 text-stone-700 shadow-sm backdrop-blur hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label="全螢幕編輯圖片"
-                      title="全螢幕編輯"
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </button>
-                    <canvas
-                      ref={uploadPreviewCanvasRef}
-                      width={uploadPreviewSize}
-                      height={uploadPreviewSize}
-                      className="max-h-full max-w-full bg-white"
-                      style={{ aspectRatio: `${uploadPreviewDimensions?.width ?? 1} / ${uploadPreviewDimensions?.height ?? 1}` }}
-                      aria-label="黑白字圖預覽"
-                    />
-                  </>
-                ) : (
-                  <span className="px-4 text-center text-sm text-stone-500">
-                    {isReplacingGlyph
-                      ? "未選擇新圖檔時會保留原圖，只儲存左側資料。"
-                      : "選擇或拍攝圖檔後，這裡會顯示黑白化與裁放後的預覽。"}
-                  </span>
+              <div className={`grid gap-2 ${uploadOriginalPreviewUrl ? "sm:grid-cols-2" : ""}`}>
+                {uploadOriginalPreviewUrl && (
+                  <div>
+                    <div className="mb-1 text-xs font-bold text-stone-500">原圖</div>
+                    <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white">
+                      <img
+                        src={uploadOriginalPreviewUrl}
+                        alt={`${uploadFileName || "上傳圖片"} 原圖`}
+                        className="max-h-full max-w-full object-contain p-3"
+                      />
+                    </div>
+                  </div>
                 )}
+                <div>
+                  {uploadOriginalPreviewUrl && <div className="mb-1 text-xs font-bold text-stone-500">處理後</div>}
+                  <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white">
+                    {uploadPreviewUrl ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={startUploadEdit}
+                          disabled={isUploading || isProcessingUploadImage}
+                          className="absolute right-2 top-2 z-10 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white/90 text-stone-700 shadow-sm backdrop-blur hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="全螢幕編輯圖片"
+                          title="全螢幕編輯"
+                        >
+                          <Maximize2 className="h-4 w-4" />
+                        </button>
+                        <canvas
+                          ref={uploadPreviewCanvasRef}
+                          width={uploadPreviewSize}
+                          height={uploadPreviewSize}
+                          className="max-h-full max-w-full bg-white"
+                          style={{ aspectRatio: `${uploadPreviewDimensions?.width ?? 1} / ${uploadPreviewDimensions?.height ?? 1}` }}
+                          aria-label="黑白字圖預覽"
+                        />
+                      </>
+                    ) : (
+                      <span className="px-4 text-center text-sm text-stone-500">
+                        {isReplacingGlyph
+                          ? "未選擇新圖檔時會保留原圖，只儲存左側資料。"
+                          : "選擇或拍攝圖檔後，這裡會顯示黑白化與裁放後的預覽。"}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
+              {uploadOriginalPreviewUrl && (
+                <div className="mt-3 grid gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
+                  <label className="grid gap-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-bold text-stone-700">邊緣柔化</span>
+                      <span className="text-xs tabular-nums text-stone-500">{uploadEdgeSoftness}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={uploadEdgeSoftness}
+                      onChange={(event) => setUploadEdgeSoftness(Number(event.target.value))}
+                      disabled={isUploading || isProcessingUploadImage || isUploadEditing}
+                      className="accent-red-800"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-bold text-stone-700">墨色強度</span>
+                      <span className="text-xs tabular-nums text-stone-500">{uploadInkStrength}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={uploadInkStrength}
+                      onChange={(event) => setUploadInkStrength(Number(event.target.value))}
+                      disabled={isUploading || isProcessingUploadImage || isUploadEditing}
+                      className="accent-red-800"
+                    />
+                  </label>
+                </div>
+              )}
             </div>
           </>
         )}

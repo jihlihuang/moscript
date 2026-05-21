@@ -11,8 +11,8 @@ type Params = {
 
 async function getOwnedGlyph(id: number, userId: string) {
   const db = await getDb();
-  const glyph = db.prepare("SELECT id, owner_user_id, image_url FROM glyphs WHERE id = ?").get(id) as
-    | { id: number; owner_user_id: string | null; image_url: string }
+  const glyph = db.prepare("SELECT id, owner_user_id, image_url, thumbnail_url FROM glyphs WHERE id = ?").get(id) as
+    | { id: number; owner_user_id: string | null; image_url: string; thumbnail_url: string | null }
     | undefined;
   if (!glyph || glyph.owner_user_id !== userId) return null;
   return { db, glyph };
@@ -60,6 +60,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   await syncDbToBlob();
   if (info.changes > 0) {
     await deleteGlyphImageByUrl(owned.glyph.image_url);
+    await deleteGlyphImageByUrl(owned.glyph.thumbnail_url);
   }
 
   return NextResponse.json({ ok: true, changes: info.changes });

@@ -10,11 +10,14 @@ export async function GET(req: NextRequest) {
   const q = params.get("q") ?? "";
   const author = params.get("author") ?? "";
   const scriptType = params.get("scriptType") ?? "";
+  const scriptTypes = params.getAll("scriptTypes").flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean);
   const char = params.get("char") ?? "";
   const perCharParam = params.get("perChar");
   const perChar = perCharParam ? Number(perCharParam) : undefined;
   const includePersonal = params.get("includePersonal") === "1";
   const includeAllPersonal = params.get("includeAllPersonal") === "1";
+  const resultScopeParam = params.get("resultScope");
+  const sortParam = params.get("sort");
   const user = requireRequestUser(req);
 
   const glyphs = await searchGlyphs({
@@ -22,10 +25,19 @@ export async function GET(req: NextRequest) {
     char,
     author,
     scriptType,
+    scriptTypes,
     perChar,
     includePersonal,
     includeAllPersonal: Boolean(includeAllPersonal && user && isAdminAllowed(user)),
     userId: user?.id ?? null,
+    resultScope:
+      resultScopeParam === "all" || resultScopeParam === "liked" || resultScopeParam === "personal" || resultScopeParam === "public"
+        ? resultScopeParam
+        : "library",
+    sort:
+      sortParam === "newest" || sortParam === "author" || sortParam === "script"
+        ? sortParam
+        : "popular",
   });
   const chars = [...new Set(Array.from(q || char).filter((c) => c.trim() !== ""))];
 

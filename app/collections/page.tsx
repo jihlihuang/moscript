@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 import { LogoMark } from "@/components/LogoMark";
 import { CollectionPreviewGlyphs } from "@/components/CollectionPreviewGlyphs";
+import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ type CollectionItemPreview = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  thumbnail_url: string | null;
   like_count: number;
   collection_count: number;
   liked_by_me: number;
@@ -64,22 +66,11 @@ export default async function CollectionsPage() {
         g.script_type,
         g.work_title,
         g.image_url,
-        COALESCE(likes.like_count, 0) AS like_count,
-        COALESCE(collections.collection_count, 0) AS collection_count,
-        CASE WHEN my_like.user_id IS NULL THEN 0 ELSE 1 END AS liked_by_me
+        g.thumbnail_url,
+        ${glyphStatsSelectSql()}
       FROM collection_items ci
       JOIN glyphs g ON g.id = ci.glyph_id
-      LEFT JOIN (
-        SELECT glyph_id, COUNT(*) AS like_count
-        FROM glyph_likes
-        GROUP BY glyph_id
-      ) likes ON likes.glyph_id = g.id
-      LEFT JOIN (
-        SELECT glyph_id, COUNT(DISTINCT collection_id) AS collection_count
-        FROM collection_items
-        GROUP BY glyph_id
-      ) collections ON collections.glyph_id = g.id
-      LEFT JOIN glyph_likes my_like ON my_like.glyph_id = g.id AND my_like.user_id = ?
+      ${glyphStatsJoinSql("g")}
       WHERE ci.collection_id IN (${collections.map(() => "?").join(", ")})
       ORDER BY ci.collection_id DESC, ci.position ASC
     `).all(user.id, ...collections.map((collection) => collection.id)) as CollectionItemPreview[]

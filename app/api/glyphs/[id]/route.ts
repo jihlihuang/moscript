@@ -79,11 +79,14 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   const { id } = await params;
   const db = await getDb();
-  const glyph = db.prepare("SELECT image_url FROM glyphs WHERE id = ?").get(id) as { image_url: string } | undefined;
+  const glyph = db.prepare("SELECT image_url, thumbnail_url FROM glyphs WHERE id = ?").get(id) as
+    | { image_url: string; thumbnail_url: string | null }
+    | undefined;
   const info = db.prepare("DELETE FROM glyphs WHERE id = ?").run(id);
   await syncDbToBlob();
   if (info.changes > 0) {
     await deleteGlyphImageByUrl(glyph?.image_url);
+    await deleteGlyphImageByUrl(glyph?.thumbnail_url);
   }
   await logAdminAction(req, user, "glyph_delete", {
     targetType: "glyph",

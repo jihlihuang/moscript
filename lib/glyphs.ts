@@ -1,4 +1,5 @@
 import { getDb, type GlyphRow } from "@/lib/db";
+import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
 export type GlyphDto = {
   id: number;
@@ -7,6 +8,7 @@ export type GlyphDto = {
   scriptType: string | null;
   workTitle: string | null;
   imageUrl: string;
+  thumbnailUrl: string | null;
   source: string | null;
   license: string | null;
   qualityScore: number;
@@ -22,10 +24,13 @@ export type SearchGlyphOptions = {
   char?: string;
   author?: string;
   scriptType?: string;
+  scriptTypes?: string[];
   perChar?: number;
   includePersonal?: boolean;
   includeAllPersonal?: boolean;
   userId?: string | null;
+  resultScope?: "library" | "all" | "liked" | "personal" | "public";
+  sort?: "popular" | "newest" | "author" | "script";
 };
 
 export type ScriptTypeStat = {
@@ -41,6 +46,7 @@ export function toGlyphDto(row: GlyphRow): GlyphDto {
     scriptType: row.script_type,
     workTitle: row.work_title,
     imageUrl: row.image_url,
+    thumbnailUrl: row.thumbnail_url ?? null,
     source: row.source,
     license: row.license,
     qualityScore: row.quality_score,
@@ -77,44 +83,55 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
   `;
   const glyphSelectSql = `
     g.*,
-    COALESCE(likes.like_count, 0) AS like_count,
-    COALESCE(collections.collection_count, 0) AS collection_count,
-    CASE WHEN my_like.user_id IS NULL THEN 0 ELSE 1 END AS liked_by_me
-  `;
-  const glyphStatsJoinSql = `
-    LEFT JOIN (
-      SELECT glyph_id, COUNT(*) AS like_count
-      FROM glyph_likes
-      GROUP BY glyph_id
-    ) likes ON likes.glyph_id = g.id
-    LEFT JOIN (
-      SELECT glyph_id, COUNT(DISTINCT collection_id) AS collection_count
-      FROM collection_items
-      GROUP BY glyph_id
-    ) collections ON collections.glyph_id = g.id
-    LEFT JOIN glyph_likes my_like ON my_like.glyph_id = g.id AND my_like.user_id = ?
+    ${glyphStatsSelectSql()}
   `;
   const popularityOrderSql = `
     (COALESCE(like_count, 0) + COALESCE(collection_count, 0) * 10) DESC,
     quality_score DESC,
     id DESC
   `;
+  const newestOrderSql = "id DESC";
+  const authorOrderSql = `${unknownAuthorSql}, COALESCE(author, ''), id DESC`;
+  const scriptOrderSql = `${scriptPrioritySql}, COALESCE(script_type, ''), ${popularityOrderSql}`;
+  const sortOrderSql =
+    options.sort === "newest"
+      ? newestOrderSql
+      : options.sort === "author"
+      ? authorOrderSql
+      : options.sort === "script"
+      ? scriptOrderSql
+      : popularityOrderSql;
   const safeUserId = (options.userId ?? "").replace(/'/g, "''");
+  const resultScope = options.resultScope ?? (options.includePersonal ? "all" : "library");
   const visibilityWhereSql = options.includeAllPersonal
     ? "1 = 1"
-    : options.includePersonal
+    : resultScope === "personal"
+    ? safeUserId
+      ? `g.owner_user_id = '${safeUserId}'`
+      : "1 = 0"
+    : resultScope === "public"
+    ? `(g.owner_user_id IS NULL OR g.visibility = 'public')`
+    : resultScope === "liked"
+    ? safeUserId
+      ? `(g.owner_user_id IS NULL OR g.visibility = 'public' OR g.owner_user_id = '${safeUserId}')`
+      : "1 = 0"
+    : resultScope === "all"
     ? `(g.owner_user_id IS NULL OR g.visibility = 'public' OR g.owner_user_id = '${safeUserId}')`
     : `g.owner_user_id IS NULL`;
   const currentUserId = options.userId ?? "";
+  const selectedScriptTypes = [
+    ...(options.scriptTypes ?? []),
+    ...(options.scriptType ? [options.scriptType] : []),
+  ].map((script) => script.trim()).filter(Boolean);
 
-  if (chars.length === 0 && !options.author && !options.scriptType) {
+  if (chars.length === 0 && !options.author && selectedScriptTypes.length === 0) {
     const rows = db
       .prepare(`
         SELECT ${glyphSelectSql}
         FROM glyphs g
-        ${glyphStatsJoinSql}
-        WHERE ${visibilityWhereSql}
-        ORDER BY ${scriptPrioritySql}, ${unknownAuthorSql}, ${popularityOrderSql}
+        ${glyphStatsJoinSql("g")}
+        WHERE ${visibilityWhereSql}${resultScope === "liked" ? " AND my_like.user_id IS NOT NULL" : ""}
+        ORDER BY ${sortOrderSql}
       `)
       .all(currentUserId) as GlyphRow[];
     return rows.map(toGlyphDto);
@@ -133,13 +150,22 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
     params.push(`%${options.author}%`);
   }
 
-  if (options.scriptType === "未標註") {
-    where.push("(g.script_type IS NULL OR trim(g.script_type) = '')");
-  } else if (options.scriptType) {
-    where.push("g.script_type = ?");
-    params.push(options.scriptType);
+  if (selectedScriptTypes.length > 0) {
+    const knownScriptTypes = selectedScriptTypes.filter((script) => script !== "未標註");
+    const scriptWhere: string[] = [];
+    if (selectedScriptTypes.includes("未標註")) {
+      scriptWhere.push("(g.script_type IS NULL OR trim(g.script_type) = '')");
+    }
+    if (knownScriptTypes.length > 0) {
+      scriptWhere.push(`g.script_type IN (${knownScriptTypes.map(() => "?").join(",")})`);
+      params.push(...knownScriptTypes);
+    }
+    where.push(`(${scriptWhere.join(" OR ")})`);
   }
   where.push(visibilityWhereSql);
+  if (resultScope === "liked") {
+    where.push("my_like.user_id IS NOT NULL");
+  }
 
   const perChar =
     typeof options.perChar === "number" && Number.isFinite(options.perChar)
@@ -147,7 +173,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
       : null;
   const whereSql = where.length ? where.join(" AND ") : "1 = 1";
 
-  const partitionSql = options.scriptType
+  const partitionSql = selectedScriptTypes.length > 0
     ? "char"
     : "char, COALESCE(script_type, '')";
 
@@ -155,7 +181,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
     WITH glyph_with_stats AS (
       SELECT ${glyphSelectSql}
       FROM glyphs g
-      ${glyphStatsJoinSql}
+      ${glyphStatsJoinSql("g")}
       WHERE ${whereSql}
     ),
     ranked AS (
@@ -163,27 +189,24 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
         *,
         ROW_NUMBER() OVER (
           PARTITION BY ${partitionSql}
-          ORDER BY ${unknownAuthorSql}, ${popularityOrderSql}
+          ORDER BY ${sortOrderSql}
         ) AS rn
       FROM glyph_with_stats
     )
     SELECT *
     FROM ranked
     WHERE rn <= ?
-    ORDER BY CASE WHEN ? = '' THEN 999 ELSE instr(?, char) END, char, ${scriptPrioritySql}, rn
+    ORDER BY CASE WHEN ? = '' THEN 999 ELSE instr(?, char) END, char, rn
   `;
   const unlimitedSql = `
     SELECT ${glyphSelectSql}
     FROM glyphs g
-    ${glyphStatsJoinSql}
+    ${glyphStatsJoinSql("g")}
     WHERE ${whereSql}
     ORDER BY
       CASE WHEN ? = '' THEN 999 ELSE instr(?, char) END,
       char,
-      ${scriptPrioritySql},
-      ${unknownAuthorSql},
-      COALESCE(script_type, ''),
-      ${popularityOrderSql}
+      ${sortOrderSql}
   `;
 
   const rows = perChar
@@ -192,7 +215,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
   return rows.map(toGlyphDto);
 }
 
-export async function listScriptTypesForGlyphs(options: Pick<SearchGlyphOptions, "q" | "char" | "author" | "includePersonal" | "includeAllPersonal" | "userId">) {
+export async function listScriptTypesForGlyphs(options: Pick<SearchGlyphOptions, "q" | "char" | "author" | "includePersonal" | "includeAllPersonal" | "userId" | "resultScope">) {
   const db = await getDb();
   const q = options.q ?? "";
   const singleChar = options.char ?? "";
@@ -211,9 +234,19 @@ export async function listScriptTypesForGlyphs(options: Pick<SearchGlyphOptions,
   }
 
   const safeUserId = (options.userId ?? "").replace(/'/g, "''");
+  const resultScope = options.resultScope ?? (options.includePersonal ? "all" : "library");
   if (options.includeAllPersonal) {
     where.push("1 = 1");
-  } else if (options.includePersonal) {
+  } else if (resultScope === "personal") {
+    where.push(safeUserId ? `owner_user_id = '${safeUserId}'` : "1 = 0");
+  } else if (resultScope === "public") {
+    where.push(`(owner_user_id IS NULL OR visibility = 'public')`);
+  } else if (resultScope === "liked") {
+    where.push(safeUserId ? `(owner_user_id IS NULL OR visibility = 'public' OR owner_user_id = '${safeUserId}')` : "1 = 0");
+    if (safeUserId) {
+      where.push(`EXISTS (SELECT 1 FROM glyph_likes gl WHERE gl.glyph_id = glyphs.id AND gl.user_id = '${safeUserId}')`);
+    }
+  } else if (resultScope === "all") {
     where.push(`(owner_user_id IS NULL OR visibility = 'public' OR owner_user_id = '${safeUserId}')`);
   } else {
     where.push(`owner_user_id IS NULL`);

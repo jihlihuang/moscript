@@ -8,6 +8,7 @@ import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 import { LogoMark } from "@/components/LogoMark";
 import { PersonalGlyphManager, type PersonalGlyph } from "@/components/PersonalGlyphManager";
 import { PersonalPageTabs } from "@/components/PersonalPageTabs";
+import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ type CollectionItemPreview = {
   script_type: string | null;
   work_title: string | null;
   image_url: string;
+  thumbnail_url: string | null;
   like_count: number;
   collection_count: number;
   liked_by_me: number;
@@ -89,22 +91,11 @@ export default async function PersonalPage() {
         g.script_type,
         g.work_title,
         g.image_url,
-        COALESCE(likes.like_count, 0) AS like_count,
-        COALESCE(collections.collection_count, 0) AS collection_count,
-        CASE WHEN my_like.user_id IS NULL THEN 0 ELSE 1 END AS liked_by_me
+        g.thumbnail_url,
+        ${glyphStatsSelectSql()}
       FROM collection_items ci
       JOIN glyphs g ON g.id = ci.glyph_id
-      LEFT JOIN (
-        SELECT glyph_id, COUNT(*) AS like_count
-        FROM glyph_likes
-        GROUP BY glyph_id
-      ) likes ON likes.glyph_id = g.id
-      LEFT JOIN (
-        SELECT glyph_id, COUNT(DISTINCT collection_id) AS collection_count
-        FROM collection_items
-        GROUP BY glyph_id
-      ) collections ON collections.glyph_id = g.id
-      LEFT JOIN glyph_likes my_like ON my_like.glyph_id = g.id AND my_like.user_id = ?
+      ${glyphStatsJoinSql("g")}
       WHERE ci.collection_id IN (${collections.map(() => "?").join(", ")})
       ORDER BY ci.collection_id DESC, ci.position ASC
     `).all(user.id, ...collections.map((collection) => collection.id)) as CollectionItemPreview[]
@@ -124,35 +115,28 @@ export default async function PersonalPage() {
       g.script_type,
       g.work_title,
       g.image_url,
+      g.thumbnail_url,
       COALESCE(g.visibility, 'public') AS visibility,
       g.created_at,
-      COALESCE(likes.like_count, 0) AS like_count,
-      COALESCE(collections.collection_count, 0) AS collection_count
+      ${glyphStatsSelectSql()}
     FROM glyphs g
-    LEFT JOIN (
-      SELECT glyph_id, COUNT(*) AS like_count
-      FROM glyph_likes
-      GROUP BY glyph_id
-    ) likes ON likes.glyph_id = g.id
-    LEFT JOIN (
-      SELECT glyph_id, COUNT(DISTINCT collection_id) AS collection_count
-      FROM collection_items
-      GROUP BY glyph_id
-    ) collections ON collections.glyph_id = g.id
+    ${glyphStatsJoinSql("g")}
     WHERE g.owner_user_id = ?
     ORDER BY g.id DESC
-    LIMIT 100
-  `).all(user.id) as {
+    LIMIT 24
+  `).all(user.id, user.id) as {
     id: number;
     char: string;
     author: string | null;
     script_type: string | null;
     work_title: string | null;
     image_url: string;
+    thumbnail_url: string | null;
     visibility: "public" | "private";
     created_at: string;
     like_count: number;
     collection_count: number;
+    liked_by_me: number;
   }[];
 
   const personalGlyphs: PersonalGlyph[] = glyphRows.map((glyph) => ({
@@ -162,6 +146,7 @@ export default async function PersonalPage() {
     scriptType: glyph.script_type,
     workTitle: glyph.work_title,
     imageUrl: glyph.image_url,
+    thumbnailUrl: glyph.thumbnail_url,
     visibility: glyph.visibility === "private" ? "private" : "public",
     likeCount: glyph.like_count,
     collectionCount: glyph.collection_count,
@@ -283,7 +268,7 @@ export default async function PersonalPage() {
               <div className="mb-4">
                 <p className="text-sm text-stone-500">可切換公開/私人，並查看每個字圖的讚數與被集字數。</p>
               </div>
-              <PersonalGlyphManager initialGlyphs={personalGlyphs} />
+              <PersonalGlyphManager initialGlyphs={personalGlyphs} initialHasMore={glyphRows.length === 24} />
             </div>
           }
         />
