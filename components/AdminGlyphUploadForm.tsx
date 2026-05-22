@@ -1408,6 +1408,14 @@ export function AdminGlyphUploadForm({
   const [isComposingUploadChar, setIsComposingUploadChar] = useState(false);
   const [isComposingUploadAuthor, setIsComposingUploadAuthor] = useState(false);
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    char: string;
+    file: string;
+    author: string;
+    workTitle: string;
+    source: string;
+    license: string;
+  }>({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
   const [successToast, setSuccessToast] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -1439,6 +1447,7 @@ export function AdminGlyphUploadForm({
   const [dragOverBatchId, setDragOverBatchId] = useState<string | null>(null);
   const [dragOverBatchSide, setDragOverBatchSide] = useState<"before" | "after">("before");
   const [composingBatchCharIds, setComposingBatchCharIds] = useState<Set<string>>(() => new Set());
+  const [batchMissingCharIds, setBatchMissingCharIds] = useState<Set<string>>(() => new Set());
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isBatchUploading, setIsBatchUploading] = useState(false);
   const [batchEditingId, setBatchEditingId] = useState<string | null>(null);
@@ -1468,6 +1477,7 @@ export function AdminGlyphUploadForm({
     isErasingUploadPreviewRef.current = false;
     uploadUndoStackRef.current = [];
     setUploadUndoCount(0);
+    setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -1510,6 +1520,7 @@ export function AdminGlyphUploadForm({
       URL.revokeObjectURL(batchOriginalPreviewUrl);
     }
     setBatchItems([]);
+    setBatchMissingCharIds(new Set());
     setBatchFileName("");
     setBatchOriginalPreviewUrl("");
     setBatchQuickText("");
@@ -1590,6 +1601,14 @@ export function AdminGlyphUploadForm({
   function updateBatchChar(id: string, value: string, isComposing = false) {
     const char = isComposing ? value : onlyChinese(value).slice(0, 1);
     setBatchItems((items) => items.map((item) => (item.id === id ? { ...item, char, status: "idle", message: "" } : item)));
+    if (!isComposing && char) {
+      setBatchMissingCharIds((ids) => {
+        if (!ids.has(id)) return ids;
+        const next = new Set(ids);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   function updateBatchQuickText(value: string) {
@@ -1901,15 +1920,29 @@ export function AdminGlyphUploadForm({
   }
 
   async function uploadBatch() {
+    const nextErrors = { char: "", file: "", author: "", workTitle: "", source: "", license: "" };
+    if (!uploadAuthor.trim()) nextErrors.author = "請填寫作者（必填）";
+    if (!uploadWorkTitle.trim()) nextErrors.workTitle = "請填寫作品名稱（必填）";
+    if (!uploadSource.trim()) nextErrors.source = "請填寫來源（必填）";
+    if (!uploadLicense.trim()) nextErrors.license = "請填寫授權類型（必填）";
+    if (Object.values(nextErrors).some(Boolean)) {
+      setFieldErrors(nextErrors);
+      return;
+    }
+    setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
+
     if (batchItems.length === 0) {
       setMessage("請先選擇一張多字圖片");
       return;
     }
-    const missingCharIndex = batchItems.findIndex((item) => !onlyChinese(item.char).slice(0, 1));
-    if (missingCharIndex >= 0) {
-      setMessage(`請先填寫第 ${missingCharIndex + 1} 個字`);
+    const missingItems = batchItems.filter((item) => !onlyChinese(item.char).slice(0, 1));
+    if (missingItems.length > 0) {
+      setBatchMissingCharIds(new Set(missingItems.map((item) => item.id)));
+      const firstId = missingItems[0].id;
+      setTimeout(() => batchCharInputRefs.current[firstId]?.focus(), 0);
       return;
     }
+    setBatchMissingCharIds(new Set());
 
     setIsBatchUploading(true);
     setMessage("批次上傳中...");
@@ -1971,10 +2004,30 @@ export function AdminGlyphUploadForm({
   async function upload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const canvas = uploadPreviewCanvasRef.current;
+    const nextErrors = { char: "", file: "", author: "", workTitle: "", source: "", license: "" };
+    if (!isReplacingGlyph && !onlyChinese(uploadChar).slice(0, 1)) {
+      nextErrors.char = "請輸入一個中文字（必填）";
+    }
     if (!replaceGlyph && (!processedUploadFile || !canvas)) {
-      setMessage("請先選擇圖片，系統會先轉成黑白預覽");
+      nextErrors.file = "請先選擇圖片（必填）";
+    }
+    if (!uploadAuthor.trim()) {
+      nextErrors.author = "請填寫作者（必填）";
+    }
+    if (!uploadWorkTitle.trim()) {
+      nextErrors.workTitle = "請填寫作品名稱（必填）";
+    }
+    if (!uploadSource.trim()) {
+      nextErrors.source = "請填寫來源（必填）";
+    }
+    if (!uploadLicense.trim()) {
+      nextErrors.license = "請填寫授權類型（必填）";
+    }
+    if (Object.values(nextErrors).some(Boolean)) {
+      setFieldErrors(nextErrors);
       return;
     }
+    setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
 
     setIsUploading(true);
     setMessage(replaceGlyph && !processedUploadFile ? "儲存中..." : "上傳中...");
@@ -2299,25 +2352,30 @@ export function AdminGlyphUploadForm({
   });
   const metadataFields = (
     <>
-      <input
-        name="author"
-        value={uploadAuthor}
-        onCompositionStart={() => setIsComposingUploadAuthor(true)}
-        onCompositionEnd={(e) => {
-          setIsComposingUploadAuthor(false);
-          setUploadAuthor(onlyChinese(e.currentTarget.value));
-        }}
-        onChange={(e) => {
-          const nativeEvent = e.nativeEvent as InputEvent;
-          setUploadAuthor(
-            isComposingUploadAuthor || nativeEvent.isComposing ? e.target.value : onlyChinese(e.target.value)
-          );
-        }}
-        placeholder="作者，例如：孫過庭"
-        disabled={isUploading || isBatchUploading}
-        className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
-        autoComplete="off"
-      />
+      <div>
+        <input
+          name="author"
+          value={uploadAuthor}
+          onCompositionStart={() => setIsComposingUploadAuthor(true)}
+          onCompositionEnd={(e) => {
+            setIsComposingUploadAuthor(false);
+            const v = onlyChinese(e.currentTarget.value);
+            setUploadAuthor(v);
+            if (fieldErrors.author && v.trim()) setFieldErrors((prev) => ({ ...prev, author: "" }));
+          }}
+          onChange={(e) => {
+            const nativeEvent = e.nativeEvent as InputEvent;
+            const v = isComposingUploadAuthor || nativeEvent.isComposing ? e.target.value : onlyChinese(e.target.value);
+            setUploadAuthor(v);
+            if (fieldErrors.author && v.trim()) setFieldErrors((prev) => ({ ...prev, author: "" }));
+          }}
+          placeholder="作者，例如：孫過庭（必填）"
+          disabled={isUploading || isBatchUploading}
+          className={`min-h-12 w-full rounded-xl border bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70 ${fieldErrors.author ? "border-red-500" : "border-stone-300"}`}
+          autoComplete="off"
+        />
+        {fieldErrors.author && <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.author}</p>}
+      </div>
       <select
         name="scriptType"
         value={uploadScriptType}
@@ -2325,17 +2383,64 @@ export function AdminGlyphUploadForm({
         disabled={isUploading || isBatchUploading}
         className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
       >
-        <option value="">書體</option>
+        <option value="">書體（選填）</option>
         {scriptOptions.map((scriptType) => (
           <option key={scriptType} value={scriptType}>
             {scriptType}
           </option>
         ))}
       </select>
-      <input name="workTitle" value={uploadWorkTitle} onChange={(e) => setUploadWorkTitle(e.target.value)} placeholder="作品，例如：書譜" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-      <input name="source" value={uploadSource} onChange={(e) => setUploadSource(e.target.value)} placeholder="來源，例如：local-dataset" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-      <input name="license" value={uploadLicense} onChange={(e) => setUploadLicense(e.target.value)} placeholder="授權，例如：non-commercial-research" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
-      <input name="qualityScore" type="number" value={uploadQualityScore} onChange={(e) => setUploadQualityScore(e.target.value)} placeholder="品質分數(排序用)" disabled={isUploading || isBatchUploading} className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70" />
+      <div>
+        <input
+          name="workTitle"
+          value={uploadWorkTitle}
+          onChange={(e) => {
+            setUploadWorkTitle(e.target.value);
+            if (fieldErrors.workTitle && e.target.value.trim()) setFieldErrors((prev) => ({ ...prev, workTitle: "" }));
+          }}
+          placeholder="作品，例如：書譜（必填）"
+          disabled={isUploading || isBatchUploading}
+          className={`min-h-12 w-full rounded-xl border bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70 ${fieldErrors.workTitle ? "border-red-500" : "border-stone-300"}`}
+        />
+        {fieldErrors.workTitle && <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.workTitle}</p>}
+      </div>
+      <div>
+        <input
+          name="source"
+          value={uploadSource}
+          onChange={(e) => {
+            setUploadSource(e.target.value);
+            if (fieldErrors.source && e.target.value.trim()) setFieldErrors((prev) => ({ ...prev, source: "" }));
+          }}
+          placeholder="來源，例如：local-dataset（必填）"
+          disabled={isUploading || isBatchUploading}
+          className={`min-h-12 w-full rounded-xl border bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70 ${fieldErrors.source ? "border-red-500" : "border-stone-300"}`}
+        />
+        {fieldErrors.source && <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.source}</p>}
+      </div>
+      <div>
+        <input
+          name="license"
+          value={uploadLicense}
+          onChange={(e) => {
+            setUploadLicense(e.target.value);
+            if (fieldErrors.license && e.target.value.trim()) setFieldErrors((prev) => ({ ...prev, license: "" }));
+          }}
+          placeholder="授權，例如：non-commercial-research（必填）"
+          disabled={isUploading || isBatchUploading}
+          className={`min-h-12 w-full rounded-xl border bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70 ${fieldErrors.license ? "border-red-500" : "border-stone-300"}`}
+        />
+        {fieldErrors.license && <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.license}</p>}
+      </div>
+      <input
+        name="qualityScore"
+        type="number"
+        value={uploadQualityScore}
+        onChange={(e) => setUploadQualityScore(e.target.value)}
+        placeholder="品質分數（排序用，選填）"
+        disabled={isUploading || isBatchUploading}
+        className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
+      />
     </>
   );
   const visibilityControl = showVisibility && !isReplacingGlyph ? (
@@ -2425,7 +2530,7 @@ export function AdminGlyphUploadForm({
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-stone-100 p-1">
             <button
               type="button"
-              onClick={() => setUploadMode("single")}
+              onClick={() => { setUploadMode("single"); setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" }); }}
               className={`min-h-10 rounded-lg px-3 text-sm font-bold ${
                 uploadMode === "single" ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
               }`}
@@ -2434,7 +2539,7 @@ export function AdminGlyphUploadForm({
             </button>
             <button
               type="button"
-              onClick={() => setUploadMode("batch")}
+              onClick={() => { setUploadMode("batch"); setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" }); }}
               className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold ${
                 uploadMode === "batch" ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
               }`}
@@ -2447,37 +2552,53 @@ export function AdminGlyphUploadForm({
 
         {uploadMode === "single" || isReplacingGlyph ? (
           <>
-            <input
-              name="file"
-              ref={fileInputRef}
-              type="file"
-              accept={uploadImageAccept}
-              onChange={(e) => void handleUploadFileChange(e)}
-              disabled={isUploading || isProcessingUploadImage}
-              className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 text-sm disabled:opacity-70"
-            />
-            <input
-              name="char"
-              required
-              value={uploadChar}
-              onCompositionStart={() => setIsComposingUploadChar(true)}
-              onCompositionEnd={(e) => {
-                setIsComposingUploadChar(false);
-                setUploadChar(onlyChinese(e.currentTarget.value).slice(0, 1));
-              }}
-              onChange={(e) => {
-                const nativeEvent = e.nativeEvent as InputEvent;
-                const nextValue =
-                  isComposingUploadChar || nativeEvent.isComposing
-                    ? e.target.value
-                    : onlyChinese(e.target.value).slice(0, 1);
-                setUploadChar(nextValue);
-              }}
-              placeholder="單字，例如：小"
-              disabled={isUploading}
-              className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700"
-              autoComplete="off"
-            />
+            <div>
+              <input
+                name="file"
+                ref={fileInputRef}
+                type="file"
+                accept={uploadImageAccept}
+                onChange={(e) => {
+                  if (fieldErrors.file) setFieldErrors((prev) => ({ ...prev, file: "" }));
+                  void handleUploadFileChange(e);
+                }}
+                disabled={isUploading || isProcessingUploadImage}
+                className={`min-h-12 w-full rounded-xl border bg-stone-50 px-3 py-3 text-sm disabled:opacity-70 ${fieldErrors.file ? "border-red-500" : "border-stone-300"}`}
+              />
+              {fieldErrors.file && (
+                <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.file}</p>
+              )}
+            </div>
+            <div>
+              <input
+                name="char"
+                value={uploadChar}
+                onCompositionStart={() => setIsComposingUploadChar(true)}
+                onCompositionEnd={(e) => {
+                  setIsComposingUploadChar(false);
+                  setUploadChar(onlyChinese(e.currentTarget.value).slice(0, 1));
+                  if (fieldErrors.char) setFieldErrors((prev) => ({ ...prev, char: "" }));
+                }}
+                onChange={(e) => {
+                  const nativeEvent = e.nativeEvent as InputEvent;
+                  const nextValue =
+                    isComposingUploadChar || nativeEvent.isComposing
+                      ? e.target.value
+                      : onlyChinese(e.target.value).slice(0, 1);
+                  setUploadChar(nextValue);
+                  if (fieldErrors.char && onlyChinese(nextValue).slice(0, 1)) {
+                    setFieldErrors((prev) => ({ ...prev, char: "" }));
+                  }
+                }}
+                placeholder="單字，例如：小（必填）"
+                disabled={isUploading}
+                className={`min-h-12 w-full rounded-xl border bg-stone-50 px-3 py-3 outline-none focus:border-red-700 ${fieldErrors.char ? "border-red-500" : "border-stone-300"}`}
+                autoComplete="off"
+              />
+              {fieldErrors.char && (
+                <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.char}</p>
+              )}
+            </div>
           </>
         ) : (
           <div className="space-y-3 rounded-2xl border border-stone-200 bg-white p-3">
@@ -2599,7 +2720,7 @@ export function AdminGlyphUploadForm({
           <>
             {metadataFields}
             {visibilityControl}
-            <button disabled={isForbidden || isUploading || isProcessingUploadImage || (!replaceGlyph && !processedUploadFile)} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800">
+            <button type="submit" disabled={isForbidden || isUploading || isProcessingUploadImage} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800">
               {isUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               {isUploading ? (processedUploadFile ? "上傳中" : "儲存中") : isReplacingGlyph ? "儲存字圖資料" : submitLabel ?? "上傳並寫入資料庫"}
             </button>
@@ -2629,7 +2750,7 @@ export function AdminGlyphUploadForm({
               <button
                 type="button"
                 onClick={() => void uploadBatch()}
-                disabled={isForbidden || isBatchProcessing || isBatchUploading || batchItems.length === 0}
+                disabled={isForbidden || isBatchProcessing || isBatchUploading}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-red-800 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-800"
               >
                 {isBatchProcessing || isBatchUploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -2680,6 +2801,12 @@ export function AdminGlyphUploadForm({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {batchMissingCharIds.size > 0 && (
+              <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                <X className="h-4 w-4 shrink-0" />
+                <span>有 {batchMissingCharIds.size} 個字圖尚未填寫中文字，請逐一填入後再批次上傳</span>
               </div>
             )}
             {isBatchProcessing ? (
@@ -2813,9 +2940,9 @@ export function AdminGlyphUploadForm({
                           composingBatchCharIds.has(item.id) || nativeEvent.isComposing
                         );
                       }}
-                      placeholder="單字"
+                      placeholder="單字（必填）"
                       disabled={isBatchUploading}
-                      className="min-h-10 w-full rounded-lg border border-stone-300 bg-stone-50 px-2 text-center text-lg font-bold outline-none focus:border-red-700 disabled:opacity-70"
+                      className={`min-h-10 w-full rounded-lg border bg-stone-50 px-2 text-center text-lg font-bold outline-none focus:border-red-700 disabled:opacity-70 ${batchMissingCharIds.has(item.id) ? "border-red-500" : "border-stone-300"}`}
                       autoComplete="off"
                     />
                     {item.message && (
