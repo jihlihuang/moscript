@@ -170,6 +170,23 @@ export function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_usage_events_event_type ON usage_events(event_type);
     CREATE INDEX IF NOT EXISTS idx_usage_events_subject ON usage_events(subject);
     CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_at);
+
+    CREATE TABLE IF NOT EXISTS security_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'medium',
+      ip TEXT,
+      user_agent TEXT,
+      user_id TEXT,
+      path TEXT,
+      details TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_security_events_event_type ON security_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_security_events_severity ON security_events(severity);
+    CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip);
+    CREATE INDEX IF NOT EXISTS idx_security_events_created_at ON security_events(created_at);
   `);
 
   const collectionColumns = db.prepare("PRAGMA table_info(collections)").all() as { name: string }[];

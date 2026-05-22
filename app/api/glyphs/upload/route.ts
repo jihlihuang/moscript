@@ -5,6 +5,7 @@ import { MAX_GLYPH_IMAGE_BYTES, onlyChinese, storeGlyphImage } from "@/lib/glyph
 import { logUsageEvent } from "@/lib/usage-log";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { MAX_AUTHOR_LEN, MAX_LICENSE_LEN, MAX_SCRIPT_TYPE_LEN, MAX_SOURCE_LEN, MAX_WORK_TITLE_LEN, truncate } from "@/lib/validation";
+import { getClientIp, logSecurityEvent } from "@/lib/security-log";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,13 @@ export async function POST(req: NextRequest) {
 
   const rl = checkRateLimit(rateLimitKey(req, "upload"), 10, 60_000);
   if (!rl.allowed) {
+    void logSecurityEvent({
+      eventType: "rate_limit_upload",
+      ip: getClientIp(req),
+      userAgent: req.headers.get("user-agent"),
+      userId: user.id,
+      path: req.nextUrl.pathname,
+    });
     return NextResponse.json({ error: "上傳太頻繁，請稍後再試" }, { status: 429 });
   }
 

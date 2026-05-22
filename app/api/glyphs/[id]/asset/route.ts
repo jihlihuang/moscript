@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBlobClient, glyphBlobNameFromPath, hasBlobConfig } from "@/lib/blob-storage";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessGlyph } from "@/lib/glyph-access";
+import { getClientIp, logSecurityEvent } from "@/lib/security-log";
 import { getDb, type GlyphRow } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -36,6 +37,16 @@ export async function GET(req: NextRequest, { params }: Params) {
   const db = await getDb();
   const glyph = db.prepare("SELECT * FROM glyphs WHERE id = ?").get(id) as GlyphRow | undefined;
   if (!glyph || !canAccessGlyph(glyph, user)) {
+    if (glyph && !canAccessGlyph(glyph, user)) {
+      void logSecurityEvent({
+        eventType: "private_resource_denied",
+        ip: getClientIp(req),
+        userAgent: req.headers.get("user-agent"),
+        userId: user?.id ?? null,
+        path: req.nextUrl.pathname,
+        details: { glyphId: id },
+      });
+    }
     return NextResponse.json({ error: "找不到字圖" }, { status: 404 });
   }
 

@@ -3,6 +3,7 @@ import { getDb, syncDbToBlob } from "@/lib/db";
 import { requireRequestUser, unauthorized } from "@/lib/auth";
 import { canAccessGlyph } from "@/lib/glyph-access";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp, logSecurityEvent } from "@/lib/security-log";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const rl = checkRateLimit(`like:${user.id}`, 30, 60_000);
   if (!rl.allowed) {
+    void logSecurityEvent({
+      eventType: "rate_limit_like",
+      ip: getClientIp(req),
+      userAgent: req.headers.get("user-agent"),
+      userId: user.id,
+      path: req.nextUrl.pathname,
+    });
     return NextResponse.json({ error: "操作太頻繁，請稍後再試" }, { status: 429 });
   }
 

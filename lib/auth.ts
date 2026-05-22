@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
+import { type SecurityEventType, logSecurityEvent } from "@/lib/security-log";
 
 export const sessionCookieName = "moscript_session";
 export const oauthStateCookieName = "moscript_oauth_state";
@@ -134,8 +135,15 @@ export function getRequestUser(req: NextRequest) {
   return parseSessionCookie(req.cookies.get(sessionCookieName)?.value);
 }
 
-export function unauthorized(message = "請先登入 Google 帳號") {
+export function unauthorized(message = "請先登入 Google 帳號", req?: NextRequest) {
   console.warn(`[auth] 401 unauthorized: ${message}`);
+  void logSecurityEvent({
+    eventType: "api_unauthorized",
+    ip: req?.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim(),
+    userAgent: req?.headers.get("user-agent"),
+    path: req?.nextUrl.pathname,
+    details: { message },
+  });
   return NextResponse.json({ error: message }, { status: 401 });
 }
 
@@ -148,9 +156,33 @@ export function isAdminAllowed(user: AuthUser) {
   return configured.length > 0 && configured.includes(user.email.toLowerCase());
 }
 
-export function forbidden(message = "此帳號沒有後台權限") {
+export function forbidden(message = "此帳號沒有後台權限", req?: NextRequest) {
   console.warn(`[auth] 403 forbidden: ${message}`);
+  void logSecurityEvent({
+    eventType: "api_forbidden",
+    ip: req?.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim(),
+    userAgent: req?.headers.get("user-agent"),
+    path: req?.nextUrl.pathname,
+    details: { message },
+  });
   return NextResponse.json({ error: message }, { status: 403 });
+}
+
+// Log a security event with full request context (call sites that have req available)
+export function logSecurityEventFromRequest(
+  req: NextRequest,
+  eventType: SecurityEventType,
+  userId?: string | null,
+  details?: unknown,
+) {
+  void logSecurityEvent({
+    eventType,
+    ip: req.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim(),
+    userAgent: req.headers.get("user-agent"),
+    path: req.nextUrl.pathname,
+    userId: userId ?? null,
+    details,
+  });
 }
 
 export function requireRequestUser(req: NextRequest) {

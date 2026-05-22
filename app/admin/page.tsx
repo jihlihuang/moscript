@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Database, ImagePlus, LogOut, Pencil, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
+import { AdminSecurityDashboard } from "@/components/AdminSecurityDashboard";
 
 type Stats = {
   totalGlyphs: number;
@@ -84,7 +85,7 @@ export default function AdminPage() {
   const [isStatsLoading, setIsStatsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [deletingGlyphId, setDeletingGlyphId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"management" | "dashboard">("dashboard");
+  const [activeTab, setActiveTab] = useState<"management" | "dashboard" | "security">("dashboard");
 
   const glyphsByChar = useMemo(
     () =>
@@ -298,6 +299,16 @@ export default function AdminPage() {
             >
               字圖管理
             </button>
+            <button
+              onClick={() => setActiveTab("security")}
+              className={`pb-3 text-sm font-bold transition-colors ${
+                activeTab === "security"
+                  ? "border-b-2 border-red-700 text-red-800"
+                  : "border-b-2 border-transparent text-stone-500 hover:text-stone-800"
+              }`}
+            >
+              資安監控
+            </button>
           </div>
         </div>
       </header>
@@ -407,6 +418,12 @@ export default function AdminPage() {
               </section>
             )}
           </div>
+        </section>
+      )}
+
+      {activeTab === "security" && (
+        <section className="mx-auto max-w-[1600px] px-3 py-4 sm:px-4 sm:py-6">
+          <AdminSecurityDashboard />
         </section>
       )}
 
