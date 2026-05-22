@@ -8,6 +8,45 @@ export const oauthStateCookieName = "moscript_oauth_state";
 
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 14;
 
+// ── Session encryption (AES-256-GCM) ──────────────────────────────────────
+// Key = SHA-256(AUTH_SECRET + "moscript-session-v1") — 32 bytes, cached per process.
+// Wire format: base64url( iv[12] | ciphertext[N] | authTag[16] )
+// The iv|ciphertext|authTag layout is compatible with Web Crypto AES-GCM used in middleware.ts.
+
+let _sessionKey: Buffer | null = null;
+function getSessionKey(): Buffer {
+  if (_sessionKey) return _sessionKey;
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) throw new Error("Missing AUTH_SECRET environment variable");
+  _sessionKey = crypto.createHash("sha256").update(secret + "moscript-session-v1").digest();
+  return _sessionKey;
+}
+
+function encryptSession(plaintext: string): string {
+  const key = getSessionKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag(); // 16 bytes
+  return Buffer.concat([iv, ciphertext, authTag]).toString("base64url");
+}
+
+function decryptSession(encoded: string): string | null {
+  try {
+    const key = getSessionKey();
+    const data = Buffer.from(encoded, "base64url");
+    if (data.length < 29) return null; // 12 + 1 + 16 minimum
+    const iv = data.subarray(0, 12);
+    const authTag = data.subarray(data.length - 16);
+    const ciphertext = data.subarray(12, data.length - 16);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
 export type AuthUser = {
   id: string;
   email: string;
@@ -62,11 +101,12 @@ export function createSessionCookie(user: AuthUser) {
     ...user,
     exp: Math.floor(Date.now() / 1000) + sessionMaxAgeSeconds,
   };
-  return createSignedValue(JSON.stringify(payload));
+  return encryptSession(JSON.stringify(payload));
 }
 
 export function parseSessionCookie(cookieValue?: string): AuthUser | null {
-  const value = readSignedValue(cookieValue);
+  if (!cookieValue) return null;
+  const value = decryptSession(cookieValue);
   if (!value) return null;
 
   try {

@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { DeleteCollectionButton } from "@/components/DeleteCollectionButton";
 import { CopyLinkButton } from "@/components/CopyLinkButton";
+import { ToggleCollectionVisibilityButton } from "@/components/ToggleCollectionVisibilityButton";
 import { LogoMark } from "@/components/LogoMark";
 import { CollectionGlyphDisplay } from "@/components/CollectionGlyphDisplay";
 import { glyphImageUrlForAccess } from "@/lib/glyph-access";
@@ -22,6 +23,7 @@ type Collection = {
   title: string;
   text: string;
   display_direction: "horizontal" | "vertical" | null;
+  visibility: "public" | "private" | null;
   created_at: string;
 };
 
@@ -79,12 +81,16 @@ export default async function CollectionPage({ params }: Params) {
   const db = await getDb();
 
   const collection = db.prepare(`
-    SELECT id, user_id, title, text, display_direction, created_at
+    SELECT id, user_id, title, text, display_direction, visibility, created_at
     FROM collections
     WHERE id = ?
   `).get(id) as Collection | undefined;
 
   if (!collection) notFound();
+
+  const isOwner = Boolean(user && user.id === collection.user_id);
+  const isPublic = (collection.visibility ?? "public") === "public";
+  if (!isPublic && !isOwner) notFound();
 
   const items = db.prepare(`
     SELECT
@@ -151,6 +157,10 @@ export default async function CollectionPage({ params }: Params) {
             </Link>
             {user?.id === collection.user_id && (
               <>
+                <ToggleCollectionVisibilityButton
+                  id={collection.id}
+                  initialVisibility={collection.visibility ?? "public"}
+                />
                 <DeleteCollectionButton id={collection.id} redirectOnSuccess={true} redirectTo="/collections" />
                 <Link href="/collections" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
                   <ArrowLeft className="h-4 w-4" />

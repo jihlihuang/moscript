@@ -4,6 +4,16 @@ import { requireRequestUser, unauthorized } from "@/lib/auth";
 import { glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { MAX_COLLECTION_ITEMS, MAX_COLLECTION_TEXT_LEN, MAX_COLLECTION_TITLE_LEN, truncate } from "@/lib/validation";
 
+type CollectionRow = {
+  id: number;
+  user_id: string | null;
+  title: string;
+  text: string;
+  display_direction: string | null;
+  visibility: string | null;
+  created_at: string;
+};
+
 export const runtime = "nodejs";
 
 type Params = {
@@ -27,17 +37,24 @@ function normalizeItems(items: IncomingItem[]) {
     .sort((a, b) => a.position - b.position);
 }
 
-export async function GET(_req: NextRequest, { params }: Params) {
+export async function GET(req: NextRequest, { params }: Params) {
   const { id } = await params;
+  const user = requireRequestUser(req);
   const db = await getDb();
 
   const collection = db.prepare(`
-    SELECT id, title, text, display_direction, created_at
+    SELECT id, user_id, title, text, display_direction, visibility, created_at
     FROM collections
     WHERE id = ?
-  `).get(id);
+  `).get(id) as CollectionRow | undefined;
 
   if (!collection) {
+    return NextResponse.json({ error: "找不到集字作品" }, { status: 404 });
+  }
+
+  const isOwner = Boolean(user && user.id === collection.user_id);
+  const isPublic = (collection.visibility ?? "public") === "public";
+  if (!isPublic && !isOwner) {
     return NextResponse.json({ error: "找不到集字作品" }, { status: 404 });
   }
 
@@ -75,7 +92,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   }[];
 
   return NextResponse.json({
-    collection,
+    collection: { ...collection, visibility: collection.visibility ?? "public" },
     items: items.map((item) => ({
       ...item,
       image_url: glyphImageUrlForAccess({
@@ -107,6 +124,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const items = hasItems ? normalizeItems(body.items as IncomingItem[]).slice(0, MAX_COLLECTION_ITEMS) : [];
   const title = typeof body.title === "string" ? truncate(body.title.trim(), MAX_COLLECTION_TITLE_LEN) : null;
   const text = typeof body.text === "string" ? truncate(body.text.trim(), MAX_COLLECTION_TEXT_LEN) : null;
+  const visibility = body.visibility === "private" ? "private" : body.visibility === "public" ? "public" : null;
 
   if (displayDirection !== undefined && displayDirection !== "horizontal" && displayDirection !== "vertical") {
     return NextResponse.json({ error: "排列設定不正確" }, { status: 400 });
@@ -134,6 +152,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       updates.push("display_direction = ?");
       values.push(displayDirection);
     }
+    if (visibility === "public" || visibility === "private") {
+      updates.push("visibility = ?");
+      values.push(visibility);
+    }
 
     if (updates.length > 0) {
       db.prepare(`UPDATE collections SET ${updates.join(", ")} WHERE id = ? AND user_id = ?`).run(...values, id, user.id);
@@ -159,7 +181,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   await syncDbToBlob();
-  return NextResponse.json({ success: true, url: `/collections/${id}` });
+  return NextResponse.json({ success: true, url: `/collections/${id}`, visibility: visibility ?? undefined });
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {

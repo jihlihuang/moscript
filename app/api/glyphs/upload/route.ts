@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
   const workTitle = truncate(String(form.get("workTitle") ?? "").trim(), MAX_WORK_TITLE_LEN);
   const source = truncate(String(form.get("source") ?? "personal-upload").trim(), MAX_SOURCE_LEN);
   const license = truncate(String(form.get("license") ?? "user-submitted").trim(), MAX_LICENSE_LEN);
-  const qualityScore = Number(form.get("qualityScore") ?? 0);
+  // qualityScore is intentionally ignored for personal uploads to prevent ranking manipulation.
+  // It is set server-side based on processing metadata only.
+  const qualityScore = 0;
   const processingMs = Number(form.get("processingMs") ?? 0);
   const visibility = form.get("visibility") === "private" ? "private" : "public";
 

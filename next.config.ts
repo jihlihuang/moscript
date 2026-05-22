@@ -1,51 +1,50 @@
 import type { NextConfig } from "next";
 
-const securityHeaders = [
-  // Prevent MIME-type sniffing
+const isDev = process.env.NODE_ENV === "development";
+
+function buildCsp(): string {
+  const directives = [
+    "default-src 'self'",
+    // Next.js HMR (dev) needs 'unsafe-eval'. Production only needs 'unsafe-inline'.
+    isDev
+      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      : "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https://lh3.googleusercontent.com",
+    // Dev: HMR uses WebSocket on same host; allow ws/wss explicitly.
+    isDev
+      ? "connect-src 'self' ws://localhost:* wss://localhost:*"
+      : "connect-src 'self'",
+    // data: needed for inline font-face used by some CJK/calligraphy libraries.
+    "font-src 'self' data:",
+    "frame-src 'none'",
+    "frame-ancestors 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ];
+  return directives.join("; ");
+}
+
+const commonHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
-  // Deny framing by other origins (clickjacking)
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
-  // Control referrer information leakage
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Disable browser features not needed by this app
-  {
-    key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=()",
-  },
-  // HSTS: require HTTPS for 1 year, include subdomains
-  {
-    key: "Strict-Transport-Security",
-    value: "max-age=31536000; includeSubDomains",
-  },
-  // Content Security Policy
-  // - script-src needs 'unsafe-inline' for Next.js hydration scripts
-  // - style-src needs 'unsafe-inline' for Tailwind/inline styles
-  // - img-src allows same-origin, data URIs, blobs (canvas), and Google profile pictures
-  // - connect-src restricts fetch/XHR to same origin only
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://lh3.googleusercontent.com",
-      "connect-src 'self'",
-      "font-src 'self'",
-      "frame-src 'none'",
-      "frame-ancestors 'self'",
-      "base-uri 'self'",
-      "form-action 'self'",
-    ].join("; "),
-  },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  // HSTS only meaningful in production (HTTPS). Omit in dev to avoid locking localhost to HTTPS.
+  ...(!isDev
+    ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+    : []),
+  { key: "Content-Security-Policy", value: buildCsp() },
 ];
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  poweredByHeader: false,
   async headers() {
     return [
       {
         source: "/(.*)",
-        headers: securityHeaders,
+        headers: commonHeaders,
       },
     ];
   },

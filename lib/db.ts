@@ -186,7 +186,11 @@ export function initSchema(db: Database.Database) {
   if (!collectionColumnNames.has("display_direction")) {
     db.prepare("ALTER TABLE collections ADD COLUMN display_direction TEXT DEFAULT 'horizontal'").run();
   }
+  if (!collectionColumnNames.has("visibility")) {
+    db.prepare("ALTER TABLE collections ADD COLUMN visibility TEXT DEFAULT 'public'").run();
+  }
   db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_visibility ON collections(visibility)").run();
 
   const glyphColumns = db.prepare("PRAGMA table_info(glyphs)").all() as { name: string }[];
   const glyphColumnNames = new Set(glyphColumns.map((column) => column.name));
