@@ -51,6 +51,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  const reason = cookieValue ? "invalid_or_expired_session" : "no_session";
+  console.warn(`[auth] admin access denied: ${reason} path=${req.nextUrl.pathname}`);
+
   const loginUrl = new URL("/api/auth/google", req.url);
   loginUrl.searchParams.set("returnTo", `${req.nextUrl.pathname}${req.nextUrl.search}`);
   return NextResponse.redirect(loginUrl);

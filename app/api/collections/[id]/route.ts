@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { requireRequestUser, unauthorized } from "@/lib/auth";
 import { glyphImageUrlForAccess } from "@/lib/glyph-access";
+import { MAX_COLLECTION_ITEMS, MAX_COLLECTION_TEXT_LEN, MAX_COLLECTION_TITLE_LEN, truncate } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -103,9 +104,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const body = await req.json();
   const displayDirection = body.displayDirection;
   const hasItems = Array.isArray(body.items);
-  const items = hasItems ? normalizeItems(body.items as IncomingItem[]) : [];
-  const title = typeof body.title === "string" ? body.title.trim() : null;
-  const text = typeof body.text === "string" ? body.text.trim() : null;
+  const items = hasItems ? normalizeItems(body.items as IncomingItem[]).slice(0, MAX_COLLECTION_ITEMS) : [];
+  const title = typeof body.title === "string" ? truncate(body.title.trim(), MAX_COLLECTION_TITLE_LEN) : null;
+  const text = typeof body.text === "string" ? truncate(body.text.trim(), MAX_COLLECTION_TEXT_LEN) : null;
 
   if (displayDirection !== undefined && displayDirection !== "horizontal" && displayDirection !== "vertical") {
     return NextResponse.json({ error: "排列設定不正確" }, { status: 400 });

@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
   const storedState = readSignedValue(req.cookies.get(oauthStateCookieName)?.value);
 
   if (!code || !state || !storedState || state !== storedState) {
+    console.warn(`[auth] oauth callback state mismatch: code=${!!code} state=${!!state} stored=${!!storedState}`);
     return NextResponse.json({ error: "Google 登入狀態驗證失敗" }, { status: 400 });
   }
 
@@ -62,6 +63,7 @@ export async function GET(req: NextRequest) {
   const token = (await tokenRes.json()) as GoogleTokenResponse;
 
   if (!tokenRes.ok || !token.access_token) {
+    console.warn(`[auth] google token exchange failed: ${token.error ?? "no access_token"}`);
     return NextResponse.json(
       { error: token.error_description || token.error || "Google token exchange failed" },
       { status: 401 }
@@ -74,6 +76,7 @@ export async function GET(req: NextRequest) {
   const profile = (await profileRes.json()) as GoogleUserInfo;
 
   if (!profileRes.ok || !profile.sub || !profile.email || profile.email_verified === false) {
+    console.warn(`[auth] google profile invalid: ok=${profileRes.ok} sub=${!!profile.sub} email=${!!profile.email} verified=${profile.email_verified}`);
     return NextResponse.json({ error: "無法取得已驗證的 Google 帳號資訊" }, { status: 401 });
   }
 

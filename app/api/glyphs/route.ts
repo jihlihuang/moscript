@@ -3,6 +3,8 @@ import { getDb, syncDbToBlob } from "@/lib/db";
 import { groupGlyphsByChar, searchGlyphs } from "@/lib/glyphs";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
 import { logUsageEvent } from "@/lib/usage-log";
+import { onlyChinese } from "@/lib/glyph-upload";
+import { MAX_AUTHOR_LEN, MAX_LICENSE_LEN, MAX_SCRIPT_TYPE_LEN, MAX_SOURCE_LEN, MAX_WORK_TITLE_LEN, truncate } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -90,27 +92,35 @@ export async function POST(req: NextRequest) {
   if (!isAdminAllowed(user)) return forbidden();
 
   const body = await req.json();
-  const db = await getDb();
+  const char = onlyChinese(String(body.char ?? "")).slice(0, 1);
+  const imageUrl = String(body.imageUrl ?? "").trim();
 
-  if (!body.char || !body.imageUrl) {
-    return NextResponse.json(
-      { error: "char 與 imageUrl 為必填" },
-      { status: 400 }
-    );
+  if (!char) {
+    return NextResponse.json({ error: "char 為必填，且必須是單一中文字" }, { status: 400 });
+  }
+  if (!imageUrl.startsWith("/glyphs/") && !imageUrl.startsWith("/private-glyphs/")) {
+    return NextResponse.json({ error: "imageUrl 格式不正確，必須是 /glyphs/ 開頭的相對路徑" }, { status: 400 });
   }
 
+  const author = truncate(String(body.author ?? "").trim(), MAX_AUTHOR_LEN) || null;
+  const scriptType = truncate(String(body.scriptType ?? "").trim(), MAX_SCRIPT_TYPE_LEN) || null;
+  const workTitle = truncate(String(body.workTitle ?? "").trim(), MAX_WORK_TITLE_LEN) || null;
+  const source = truncate(String(body.source ?? "manual").trim(), MAX_SOURCE_LEN);
+  const license = truncate(String(body.license ?? "non-commercial-research").trim(), MAX_LICENSE_LEN);
+
+  const db = await getDb();
   const info = db.prepare(`
     INSERT INTO glyphs (
       char, author, script_type, work_title, image_url, source, license, quality_score
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    body.char,
-    body.author ?? null,
-    body.scriptType ?? null,
-    body.workTitle ?? null,
-    body.imageUrl,
-    body.source ?? "manual",
-    body.license ?? "non-commercial-research",
+    char,
+    author,
+    scriptType,
+    workTitle,
+    imageUrl,
+    source,
+    license,
     Number(body.qualityScore ?? 0)
   );
 
@@ -118,13 +128,7 @@ export async function POST(req: NextRequest) {
   await logAdminAction(req, user, "glyph_create", {
     targetType: "glyph",
     targetId: info.lastInsertRowid,
-    details: {
-      char: body.char,
-      author: body.author ?? null,
-      scriptType: body.scriptType ?? null,
-      workTitle: body.workTitle ?? null,
-      imageUrl: body.imageUrl,
-    },
+    details: { char, author, scriptType, workTitle, imageUrl },
   });
 
   return NextResponse.json({ id: info.lastInsertRowid });

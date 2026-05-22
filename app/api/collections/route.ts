@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { requireRequestUser, unauthorized } from "@/lib/auth";
+import { MAX_COLLECTION_ITEMS, MAX_COLLECTION_TEXT_LEN, MAX_COLLECTION_TITLE_LEN, truncate } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -52,10 +53,10 @@ export async function POST(req: NextRequest) {
   if (!user) return unauthorized();
 
   const body = await req.json();
-  const title = String(body.title || body.text || "未命名集字作品").trim();
-  const text = String(body.text || "").trim();
+  const title = truncate(String(body.title || body.text || "未命名集字作品").trim(), MAX_COLLECTION_TITLE_LEN);
+  const text = truncate(String(body.text || "").trim(), MAX_COLLECTION_TEXT_LEN);
   const displayDirection = body.displayDirection === "vertical" ? "vertical" : "horizontal";
-  const items = normalizeItems((body.items || []) as IncomingItem[]);
+  const items = normalizeItems((body.items || []) as IncomingItem[]).slice(0, MAX_COLLECTION_ITEMS);
 
   if (!text || items.length === 0) {
     return NextResponse.json(

@@ -95,6 +95,7 @@ export function getRequestUser(req: NextRequest) {
 }
 
 export function unauthorized(message = "請先登入 Google 帳號") {
+  console.warn(`[auth] 401 unauthorized: ${message}`);
   return NextResponse.json({ error: message }, { status: 401 });
 }
 
@@ -108,6 +109,7 @@ export function isAdminAllowed(user: AuthUser) {
 }
 
 export function forbidden(message = "此帳號沒有後台權限") {
+  console.warn(`[auth] 403 forbidden: ${message}`);
   return NextResponse.json({ error: message }, { status: 403 });
 }
 

@@ -4,6 +4,7 @@ import { requireRequestUser, unauthorized } from "@/lib/auth";
 import { MAX_GLYPH_IMAGE_BYTES, onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
 import { logUsageEvent } from "@/lib/usage-log";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
+import { MAX_AUTHOR_LEN, MAX_LICENSE_LEN, MAX_SCRIPT_TYPE_LEN, MAX_SOURCE_LEN, MAX_WORK_TITLE_LEN, truncate } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -34,11 +35,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "請填寫單字" }, { status: 400 });
   }
 
-  const author = String(form.get("author") ?? user.name ?? "").trim();
-  const scriptType = String(form.get("scriptType") ?? "").trim();
-  const workTitle = String(form.get("workTitle") ?? "").trim();
-  const source = String(form.get("source") ?? "personal-upload").trim();
-  const license = String(form.get("license") ?? "user-submitted").trim();
+  const author = truncate(String(form.get("author") ?? user.name ?? "").trim(), MAX_AUTHOR_LEN);
+  const scriptType = truncate(String(form.get("scriptType") ?? "").trim(), MAX_SCRIPT_TYPE_LEN);
+  const workTitle = truncate(String(form.get("workTitle") ?? "").trim(), MAX_WORK_TITLE_LEN);
+  const source = truncate(String(form.get("source") ?? "personal-upload").trim(), MAX_SOURCE_LEN);
+  const license = truncate(String(form.get("license") ?? "user-submitted").trim(), MAX_LICENSE_LEN);
   const qualityScore = Number(form.get("qualityScore") ?? 0);
   const processingMs = Number(form.get("processingMs") ?? 0);
   const visibility = form.get("visibility") === "private" ? "private" : "public";

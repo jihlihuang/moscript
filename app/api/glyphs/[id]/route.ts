@@ -3,7 +3,8 @@ import { getDb, type GlyphRow, syncDbToBlob } from "@/lib/db";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
 import { canAccessGlyph } from "@/lib/glyph-access";
 import { toGlyphDto } from "@/lib/glyphs";
-import { deleteGlyphImageByUrl } from "@/lib/glyph-upload";
+import { deleteGlyphImageByUrl, onlyChinese } from "@/lib/glyph-upload";
+import { MAX_AUTHOR_LEN, MAX_LICENSE_LEN, MAX_SCRIPT_TYPE_LEN, MAX_SOURCE_LEN, MAX_WORK_TITLE_LEN, truncate } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -34,24 +35,24 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const { id } = await params;
   const body = await req.json();
-  const db = await getDb();
-  const char = String(body.char ?? "").trim();
+  const char = onlyChinese(String(body.char ?? "")).slice(0, 1);
 
   if (!char) {
-    return NextResponse.json({ error: "char 為必填" }, { status: 400 });
+    return NextResponse.json({ error: "char 為必填，且必須是單一中文字" }, { status: 400 });
   }
 
+  const db = await getDb();
   db.prepare(`
     UPDATE glyphs
     SET char = ?, author = ?, script_type = ?, work_title = ?, source = ?, license = ?, quality_score = ?
     WHERE id = ?
   `).run(
     char,
-    body.author || null,
-    body.scriptType || null,
-    body.workTitle || null,
-    body.source || null,
-    body.license || null,
+    truncate(String(body.author ?? "").trim(), MAX_AUTHOR_LEN) || null,
+    truncate(String(body.scriptType ?? "").trim(), MAX_SCRIPT_TYPE_LEN) || null,
+    truncate(String(body.workTitle ?? "").trim(), MAX_WORK_TITLE_LEN) || null,
+    truncate(String(body.source ?? "").trim(), MAX_SOURCE_LEN) || null,
+    truncate(String(body.license ?? "").trim(), MAX_LICENSE_LEN) || null,
     Number(body.qualityScore ?? 0),
     id
   );
