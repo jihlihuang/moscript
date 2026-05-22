@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { requireRequestUser, unauthorized } from "@/lib/auth";
-import { onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
+import { MAX_GLYPH_IMAGE_BYTES, onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
 import { logUsageEvent } from "@/lib/usage-log";
+import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -10,11 +11,20 @@ export async function POST(req: NextRequest) {
   const user = requireRequestUser(req);
   if (!user) return unauthorized("請先登入後再上傳字圖");
 
+  const rl = checkRateLimit(rateLimitKey(req, "upload"), 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "上傳太頻繁，請稍後再試" }, { status: 429 });
+  }
+
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
     await logUsageEvent({ eventType: "upload_failed", subject: "personal", userId: user.id, details: { reason: "missing_file" } });
     return NextResponse.json({ error: "請上傳圖片檔" }, { status: 400 });
+  }
+  if (file.size > MAX_GLYPH_IMAGE_BYTES) {
+    await logUsageEvent({ eventType: "upload_failed", subject: "personal", userId: user.id, details: { reason: "file_too_large", size: file.size } });
+    return NextResponse.json({ error: "圖片檔案過大，最大允許 20MB" }, { status: 400 });
   }
   const thumbnailFile = form.get("thumbnailFile");
 

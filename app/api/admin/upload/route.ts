@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
-import { onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
+import { MAX_GLYPH_IMAGE_BYTES, onlyChinese, storeGlyphImage } from "@/lib/glyph-upload";
 import { logUsageEvent } from "@/lib/usage-log";
 
 export const runtime = "nodejs";
@@ -18,6 +18,10 @@ export async function POST(req: NextRequest) {
   if (!(file instanceof File)) {
     await logUsageEvent({ eventType: "upload_failed", subject: "admin", userId: user.id, details: { reason: "missing_file" } });
     return NextResponse.json({ error: "請上傳圖片檔" }, { status: 400 });
+  }
+  if (file.size > MAX_GLYPH_IMAGE_BYTES) {
+    await logUsageEvent({ eventType: "upload_failed", subject: "admin", userId: user.id, details: { reason: "file_too_large", size: file.size } });
+    return NextResponse.json({ error: "圖片檔案過大，最大允許 20MB" }, { status: 400 });
   }
 
   const char = onlyChinese(String(form.get("char") ?? "")).slice(0, 1);

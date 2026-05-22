@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, syncDbToBlob } from "@/lib/db";
 import { requireRequestUser, unauthorized } from "@/lib/auth";
 import { canAccessGlyph } from "@/lib/glyph-access";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = requireRequestUser(req);
   if (!user) return unauthorized("請先登入後再按讚");
+
+  const rl = checkRateLimit(`like:${user.id}`, 30, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "操作太頻繁，請稍後再試" }, { status: 429 });
+  }
 
   const { id } = await params;
   const glyphId = Number(id);

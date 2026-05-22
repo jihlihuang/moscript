@@ -88,7 +88,7 @@ export default function FrontStagePage() {
   const [editingCollectionId, setEditingCollectionId] = useState<number | null>(null);
   const [selectedScriptTypes, setSelectedScriptTypes] = useState<string[]>([]);
   const [availableScripts, setAvailableScripts] = useState<string[]>([]);
-  const [resultScope, setResultScope] = useState<ResultScope>("library");
+  const [resultScope, setResultScope] = useState<ResultScope>("all");
   const [resultSort, setResultSort] = useState<ResultSort>("popular");
   const [data, setData] = useState<ApiResult | null>(null);
   const [loadingMoreChars, setLoadingMoreChars] = useState<Record<string, boolean>>({});
@@ -103,6 +103,7 @@ export default function FrontStagePage() {
   const [logoClickCount, setLogoClickCount] = useState(0);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
+  const [topChars, setTopChars] = useState<string[]>([]);
   const pendingSaveStartedRef = useRef(false);
   const collectionLoadStartedRef = useRef(false);
   const initialGlyphLoadStartedRef = useRef(false);
@@ -224,8 +225,20 @@ export default function FrontStagePage() {
       setUser(json.user);
       setIsAuthChecked(true);
     }
-
     void loadCurrentUser();
+  }, []);
+
+  useEffect(() => {
+    async function loadSuggestions() {
+      try {
+        const res = await fetch("/api/glyphs/top-chars");
+        const json = (await res.json()) as { suggestions: string[] };
+        setTopChars(json.suggestions ?? []);
+      } catch {
+        // non-critical, silently ignore
+      }
+    }
+    void loadSuggestions();
   }, []);
 
   useEffect(() => {
@@ -642,7 +655,7 @@ export default function FrontStagePage() {
               />
               <div>
                 <h1 className="sr-only">墨跡字帖</h1>
-                <p className="text-xs font-medium leading-snug text-stone-500 sm:text-sm">從字形到心境，重新認識書法之美</p>
+                <p className="hidden text-xs font-medium leading-snug text-stone-500 sm:block sm:text-sm">從字形到心境，重新認識書法之美</p>
               </div>
             </div>
           </div>
@@ -806,7 +819,7 @@ export default function FrontStagePage() {
                   type="button"
                   onClick={() => setIsFilterOpen(!isFilterOpen)}
                   className={`inline-flex items-center justify-center rounded-xl border px-3 lg:hidden ${
-                    isFilterOpen || author || resultScope !== "library" || resultSort !== "popular" || selectedScriptTypes.length > 0
+                    isFilterOpen || author || resultScope !== "all" || resultSort !== "popular" || selectedScriptTypes.length > 0
                       ? "border-red-700 bg-red-50 text-red-800"
                       : "border-stone-300 bg-stone-50 text-stone-600"
                   }`}
@@ -1092,28 +1105,26 @@ export default function FrontStagePage() {
                 </div>
                 <h3 className="mb-2 text-lg font-bold text-stone-700">開始探索書法之美</h3>
                 <p className="text-sm sm:text-base">在左側輸入文字，系統會依每個字顯示可用的書法字圖。</p>
-                <div className="mt-6 flex flex-wrap justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQ("小橋流水人家");
-                      void searchGlyphs(selectedScriptTypes, false, "小橋流水人家");
-                    }}
-                    className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
-                  >
-                    試試「小橋流水人家」
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQ("墨跡");
-                      void searchGlyphs(selectedScriptTypes, false, "墨跡");
-                    }}
-                    className="rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
-                  >
-                    試試「墨跡」
-                  </button>
-                </div>
+                {topChars.length > 0 && (
+                  <div className="mt-6">
+                    <p className="mb-2 text-xs text-stone-400">試試這些詞句</p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {topChars.slice(0, 8).map((phrase) => (
+                        <button
+                          key={phrase}
+                          type="button"
+                          onClick={() => {
+                            setQ(phrase);
+                            void searchGlyphs(selectedScriptTypes, false, phrase);
+                          }}
+                          className="rounded-xl border border-stone-300 bg-white px-4 py-2 font-serif text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                        >
+                          {phrase}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

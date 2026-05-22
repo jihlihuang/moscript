@@ -27,27 +27,25 @@ export function glyphAccessWhereSql({
   userId?: string | null;
   includeAllPersonal?: boolean;
   resultScope?: GlyphResultScope;
-}) {
-  const safeUserId = (userId ?? "").replace(/'/g, "''");
-  if (includeAllPersonal) return "1 = 1";
+}): { sql: string; params: unknown[] } {
+  if (includeAllPersonal) return { sql: "1 = 1", params: [] };
 
   const ownerColumn = `${glyphAlias}.owner_user_id`;
   const visibilityColumn = `${glyphAlias}.visibility`;
   const publiclyAccessible = `(${ownerColumn} IS NULL OR ${visibilityColumn} = 'public')`;
-  const userAccessible = safeUserId
-    ? `(${publiclyAccessible} OR ${ownerColumn} = '${safeUserId}')`
-    : publiclyAccessible;
 
   if (resultScope === "personal") {
-    return safeUserId ? `${ownerColumn} = '${safeUserId}'` : "1 = 0";
+    if (!userId) return { sql: "1 = 0", params: [] };
+    return { sql: `${ownerColumn} = ?`, params: [userId] };
   }
   if (resultScope === "public") {
-    return publiclyAccessible;
+    return { sql: publiclyAccessible, params: [] };
   }
   if (resultScope === "all" || resultScope === "liked") {
-    return userAccessible;
+    if (!userId) return { sql: publiclyAccessible, params: [] };
+    return { sql: `(${publiclyAccessible} OR ${ownerColumn} = ?)`, params: [userId] };
   }
-  return `${ownerColumn} IS NULL`;
+  return { sql: `${ownerColumn} IS NULL`, params: [] };
 }
 
 export function glyphAccessWhereSqlForUnaliasedGlyphs(options: Omit<Parameters<typeof glyphAccessWhereSql>[0], "glyphAlias">) {

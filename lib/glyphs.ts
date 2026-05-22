@@ -105,7 +105,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
       ? scriptOrderSql
       : popularityOrderSql;
   const resultScope = options.resultScope ?? (options.includePersonal ? "all" : "library");
-  const visibilityWhereSql = glyphAccessWhereSql({
+  const { sql: visibilityWhereSql, params: visibilityParams } = glyphAccessWhereSql({
     glyphAlias: "g",
     userId: options.userId,
     includeAllPersonal: options.includeAllPersonal,
@@ -126,7 +126,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
         WHERE ${visibilityWhereSql}${resultScope === "liked" ? " AND my_like.user_id IS NOT NULL" : ""}
         ORDER BY ${sortOrderSql}
       `)
-      .all(currentUserId) as GlyphRow[];
+      .all(currentUserId, ...visibilityParams) as GlyphRow[];
     return rows.map(toGlyphDto);
   }
 
@@ -156,6 +156,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
     where.push(`(${scriptWhere.join(" OR ")})`);
   }
   where.push(visibilityWhereSql);
+  // visibilityParams are appended after other WHERE params in all() calls below
   if (resultScope === "liked") {
     where.push("my_like.user_id IS NOT NULL");
   }
@@ -212,10 +213,10 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
   `;
 
   const rows = perChar
-    ? (db.prepare(rankedSql).all(currentUserId, ...params, perChar, q, q) as GlyphRow[])
+    ? (db.prepare(rankedSql).all(currentUserId, ...params, ...visibilityParams, perChar, q, q) as GlyphRow[])
     : (limit
-      ? db.prepare(unlimitedSql).all(currentUserId, ...params, q, q, limit, offset)
-      : db.prepare(unlimitedSql).all(currentUserId, ...params, q, q)) as GlyphRow[];
+      ? db.prepare(unlimitedSql).all(currentUserId, ...params, ...visibilityParams, q, q, limit, offset)
+      : db.prepare(unlimitedSql).all(currentUserId, ...params, ...visibilityParams, q, q)) as GlyphRow[];
   return rows.map(toGlyphDto);
 }
 
@@ -238,14 +239,20 @@ export async function listScriptTypesForGlyphs(options: Pick<SearchGlyphOptions,
   }
 
   const resultScope = options.resultScope ?? (options.includePersonal ? "all" : "library");
-  where.push(glyphAccessWhereSqlForUnaliasedGlyphs({
+  const { sql: accessSql, params: accessParams } = glyphAccessWhereSqlForUnaliasedGlyphs({
     userId: options.userId,
     includeAllPersonal: options.includeAllPersonal,
     resultScope,
-  }));
+  });
+  where.push(accessSql);
+  params.push(...accessParams);
   if (resultScope === "liked") {
-    const safeUserId = (options.userId ?? "").replace(/'/g, "''");
-    where.push(safeUserId ? `EXISTS (SELECT 1 FROM glyph_likes gl WHERE gl.glyph_id = glyphs.id AND gl.user_id = '${safeUserId}')` : "1 = 0");
+    if (options.userId) {
+      where.push("EXISTS (SELECT 1 FROM glyph_likes gl WHERE gl.glyph_id = glyphs.id AND gl.user_id = ?)");
+      params.push(options.userId);
+    } else {
+      where.push("1 = 0");
+    }
   }
 
   const rows = db.prepare(`

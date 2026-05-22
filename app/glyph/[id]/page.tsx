@@ -52,18 +52,20 @@ export default async function GlyphDetailPage({ params }: Params) {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="border-b border-stone-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
-          <Link href="/" className="flex min-w-0 items-center gap-3">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-4">
+          <div className="flex min-w-0 items-center gap-3">
             <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
             <div className="min-w-0">
-              <h1 className="font-serif text-xl font-bold sm:text-2xl">字圖詳情</h1>
+              <h1 className="truncate font-serif text-xl font-bold sm:text-2xl">字圖詳情</h1>
               <p className="truncate text-xs text-stone-500 sm:text-sm">{glyph.char}｜{glyph.author || "佚名"}</p>
             </div>
-          </Link>
-          <Link href="/" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800">
-            <ArrowLeft className="h-4 w-4" />
-            回首頁
-          </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+            <Link href="/" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800">
+              <ArrowLeft className="h-4 w-4" />
+              回首頁
+            </Link>
+          </div>
         </div>
       </header>
 

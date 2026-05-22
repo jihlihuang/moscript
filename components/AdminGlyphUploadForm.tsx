@@ -17,7 +17,6 @@ const allowedUploadImageExtensions = [
   "png",
   "webp",
   "gif",
-  "svg",
   "bmp",
   "ico",
   "avif",
@@ -2453,7 +2452,6 @@ export function AdminGlyphUploadForm({
               ref={fileInputRef}
               type="file"
               accept={uploadImageAccept}
-              capture="environment"
               onChange={(e) => void handleUploadFileChange(e)}
               disabled={isUploading || isProcessingUploadImage}
               className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 text-sm disabled:opacity-70"
@@ -2514,7 +2512,6 @@ export function AdminGlyphUploadForm({
               ref={batchFileInputRef}
               type="file"
               accept={uploadImageAccept}
-              capture="environment"
               onChange={(e) => void handleBatchFileChange(e)}
               disabled={isBatchProcessing || isBatchUploading}
               className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 text-sm disabled:opacity-70"

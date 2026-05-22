@@ -64,7 +64,7 @@ export default async function UploadGlyphPage() {
           <div className="flex min-w-0 items-center gap-3">
             <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
             <div className="min-w-0">
-              <h1 className="font-serif text-xl font-bold sm:text-2xl">上傳個人字圖</h1>
+              <h1 className="truncate font-serif text-xl font-bold sm:text-2xl">上傳個人字圖</h1>
               <p className="truncate text-xs text-stone-500 sm:text-sm">可選擇公開或私人｜{user.email}</p>
             </div>
           </div>

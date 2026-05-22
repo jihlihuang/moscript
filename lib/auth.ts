@@ -20,9 +20,9 @@ type SessionPayload = AuthUser & {
 };
 
 function getAuthSecret() {
-  const secret = process.env.AUTH_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+  const secret = process.env.AUTH_SECRET;
   if (!secret) {
-    throw new Error("Missing AUTH_SECRET or GOOGLE_CLIENT_SECRET");
+    throw new Error("Missing AUTH_SECRET environment variable — set a long random string, do not reuse GOOGLE_CLIENT_SECRET");
   }
   return secret;
 }
@@ -104,7 +104,7 @@ export function isAdminAllowed(user: AuthUser) {
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
 
-  return configured.length === 0 || configured.includes(user.email.toLowerCase());
+  return configured.length > 0 && configured.includes(user.email.toLowerCase());
 }
 
 export function forbidden(message = "此帳號沒有後台權限") {

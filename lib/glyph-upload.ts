@@ -2,13 +2,14 @@ import fs from "fs/promises";
 import path from "path";
 import { deleteBlobIfExists, glyphBlobName, glyphBlobNameFromPath, glyphImageUrl, hasBlobConfig, uploadBufferToBlob } from "@/lib/blob-storage";
 
+export const MAX_GLYPH_IMAGE_BYTES = 20 * 1024 * 1024; // 20 MB
+
 export const allowedGlyphImageExtensions = new Set([
   ".jpg",
   ".jpeg",
   ".png",
   ".webp",
   ".gif",
-  ".svg",
   ".bmp",
   ".ico",
   ".avif",
@@ -64,7 +65,11 @@ export async function storeGlyphImage({
   isPrivate?: boolean;
 }) {
   const ext = path.extname(file.name || ".png").toLowerCase() || ".png";
-  if (!allowedGlyphImageExtensions.has(ext) || (file.type && !file.type.startsWith("image/"))) {
+  if (
+    !allowedGlyphImageExtensions.has(ext) ||
+    (file.type && !file.type.startsWith("image/")) ||
+    file.type === "image/svg+xml"
+  ) {
     return { error: `只支援圖檔格式：${allowedGlyphImageExtensionLabel}` };
   }
 
