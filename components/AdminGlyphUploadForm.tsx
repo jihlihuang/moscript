@@ -1838,7 +1838,7 @@ export function AdminGlyphUploadForm({
     uploadUndoStackRef.current = [];
     setUploadUndoCount(0);
     setUploadColorMode("bw");
-    setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
+    setFieldErrors({ char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -2623,7 +2623,7 @@ export function AdminGlyphUploadForm({
       setFieldErrors(nextErrors);
       return;
     }
-    setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
+    setFieldErrors({ char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" });
 
     if (batchItems.length === 0) {
       setMessage("請先選擇一張多字圖片");
@@ -3373,7 +3373,7 @@ export function AdminGlyphUploadForm({
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-stone-100 p-1">
             <button
               type="button"
-              onClick={() => { setUploadMode("single"); setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" }); }}
+              onClick={() => { setUploadMode("single"); setFieldErrors({ char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" }); }}
               className={`min-h-10 rounded-lg px-3 text-sm font-bold ${
                 uploadMode === "single" ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
               }`}
@@ -3382,7 +3382,7 @@ export function AdminGlyphUploadForm({
             </button>
             <button
               type="button"
-              onClick={() => { setUploadMode("batch"); setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" }); }}
+              onClick={() => { setUploadMode("batch"); setFieldErrors({ char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" }); }}
               className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold ${
                 uploadMode === "batch" ? "bg-white text-red-800 shadow-sm" : "text-stone-600 hover:text-stone-900"
               }`}

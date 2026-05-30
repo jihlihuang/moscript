@@ -112,10 +112,10 @@ export function CollectionGlyphDisplay({
       ) : (
         <div className="rounded-3xl bg-stone-50 p-3 sm:p-6">
           <div className="overflow-x-auto overscroll-x-contain">
-            <div className="mx-auto flex w-fit max-w-full justify-center gap-4 rounded-[1.5rem] bg-white px-4 py-4 shadow-inner sm:px-8 sm:py-8">
-              <div className="flex max-h-[min(76vh,720px)] snap-x snap-mandatory flex-col flex-wrap content-start items-center gap-3 [direction:rtl] sm:gap-4">
+            <div className="flex w-max justify-center gap-4 rounded-[1.5rem] bg-white px-4 py-4 shadow-inner sm:px-8 sm:py-8">
+              <div className="flex max-h-[min(76vh,720px)] flex-col flex-wrap content-start items-center gap-3 sm:gap-4 [transform:scaleX(-1)]">
                 {items.map((item) => (
-                  <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 snap-center space-y-2 [direction:ltr]">
+                  <div key={`${item.position}-${item.glyph_id}`} className="shrink-0 space-y-2 [transform:scaleX(-1)]">
                     <Link
                       href={itemHref(item)}
                       className="block rounded-xl transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-red-800"
