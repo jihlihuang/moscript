@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Database, GripVertical, ImagePlus, LogOut, Pencil, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Check, Database, GripVertical, ImagePlus, Pencil, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { LogoutButton } from "@/components/LogoutButton";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
@@ -502,12 +503,9 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-            <form action="/api/auth/logout?returnTo=/" method="post" className="contents sm:block">
-              <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm">
-                <LogOut className="h-4 w-4" />
-                登出
-              </button>
-            </form>
+            <LogoutButton
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
+            />
             <Link href="/" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white sm:px-4 sm:text-sm">
               <ArrowLeft className="h-4 w-4" />
               回前台

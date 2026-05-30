@@ -159,25 +159,29 @@ export default async function CollectionPage({ params }: Params) {
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
-            <CopyLinkButton url={fullUrl} />
-            <Link href={`/?collectionId=${collection.id}`} className="col-span-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-stone-900 sm:col-span-1">
-              <Search className="h-4 w-4" />
-              載入到首頁
-            </Link>
-            {user?.id === collection.user_id && (
-              <>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <div className="flex items-center gap-2 sm:contents">
+              {isOwner && (
+                <Link href="/collections" className="flex-1 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200 sm:flex-none">
+                  <ArrowLeft className="h-4 w-4" />
+                  回集字列表
+                </Link>
+              )}
+              {isOwner && (
                 <ToggleCollectionVisibilityButton
                   id={collection.id}
                   initialVisibility={collection.visibility ?? "public"}
                 />
+              )}
+              <CopyLinkButton url={fullUrl} hideLabel={isOwner} className={isOwner ? "sm:flex-none" : "flex-1 sm:flex-none"} />
+              {isOwner && (
                 <DeleteCollectionButton id={collection.id} redirectOnSuccess={true} redirectTo="/collections" />
-                <Link href="/collections" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800 transition hover:bg-stone-200">
-                  <ArrowLeft className="h-4 w-4" />
-                  回集字列表
-                </Link>
-              </>
-            )}
+              )}
+            </div>
+            <Link href={`/?collectionId=${collection.id}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-stone-900">
+              <Search className="h-4 w-4" />
+              載入到首頁
+            </Link>
           </div>
         </div>
       </header>

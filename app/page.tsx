@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, Menu, RefreshCw, Search, UserRound, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, Menu, RefreshCw, Search, UserRound, X } from "lucide-react";
+import { LogoutButton } from "@/components/LogoutButton";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { toast } from "sonner";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
@@ -805,18 +806,16 @@ export default function FrontStagePage() {
           </div>
           <div className="flex items-center gap-2">
             {user ? (
-              <form action="/api/auth/logout?returnTo=/" method="post" onSubmit={handleLogout} className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <span className="hidden max-w-[180px] truncate text-sm text-stone-500 md:inline">
                   {user.email}
                 </span>
-                <button
-                  type="submit"
+                <LogoutButton
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span className="hidden sm:inline">登出</span>
-                </button>
-              </form>
+                  labelClassName="hidden sm:inline"
+                  onBeforeLogout={handleLogout}
+                />
+              </div>
             ) : (
               <Link
                 href="/api/auth/google?returnTo=/"
@@ -914,8 +913,8 @@ export default function FrontStagePage() {
           {searchTab === "sets" ? (
             <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
               <form onSubmit={(e) => { e.preventDefault(); void searchSets(); }} className="space-y-2">
-                <div className="flex gap-2">
-                  <label className="relative block flex-1">
+                <div>
+                  <label className="relative block">
                     <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
                     <input
                       value={setsQuery}
@@ -962,13 +961,6 @@ export default function FrontStagePage() {
                       </button>
                     )}
                   </label>
-                  <button
-                    type="submit"
-                    disabled={setsLoading || !setsQuery.trim()}
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {setsLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  </button>
                 </div>
               </form>
             </div>

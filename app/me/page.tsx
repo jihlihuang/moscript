@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, BookOpen, Images, LogOut, Upload } from "lucide-react";
+import { ArrowLeft, BookOpen, Images, Search, Upload } from "lucide-react";
+import { LogoutButton } from "@/components/LogoutButton";
 import { getCurrentUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { CollectionPreviewGlyphs } from "@/components/CollectionPreviewGlyphs";
@@ -11,6 +12,7 @@ import {
   type PersonalGlyph,
 } from "@/components/PersonalGlyphManager";
 import { PersonalPageTabs } from "@/components/PersonalPageTabs";
+import { SourceImagePreview } from "@/components/SourceImagePreview";
 import { glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 
@@ -21,6 +23,9 @@ type CollectionSummary = {
   title: string;
   text: string;
   display_direction: "horizontal" | "vertical" | null;
+  source_set_id: number | null;
+  source_set_name: string | null;
+  source_image_url: string | null;
   created_at: string;
   item_count: number;
 };
@@ -72,9 +77,10 @@ export default async function PersonalPage({
 
   const collections = db
     .prepare(
-      `SELECT c.id, c.title, c.text, c.display_direction, c.created_at, COUNT(ci.id) AS item_count
+      `SELECT c.id, c.title, c.text, c.display_direction, c.source_set_id, c.source_set_name, gs.source_image_url, c.created_at, COUNT(ci.id) AS item_count
        FROM collections c
        LEFT JOIN collection_items ci ON ci.collection_id = c.id
+       LEFT JOIN glyph_sets gs ON gs.id = c.source_set_id
        WHERE c.user_id = ?
        GROUP BY c.id
        ORDER BY c.id DESC
@@ -187,15 +193,10 @@ export default async function PersonalPage({
               <ArrowLeft className="h-4 w-4" />
               <span className="hidden sm:inline">回首頁</span>
             </Link>
-            <form action="/api/auth/logout?returnTo=/" method="post">
-              <button
-                type="submit"
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">登出</span>
-              </button>
-            </form>
+            <LogoutButton
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
+              labelClassName="hidden sm:inline"
+            />
           </div>
         </div>
       </header>
@@ -287,15 +288,15 @@ export default async function PersonalPage({
                   尚無集字作品，前往首頁開始集字吧。
                 </div>
               ) : (
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid items-stretch gap-4 md:grid-cols-2">
                   {collections.map((collection) => {
                     const items = itemsByCollection[collection.id] ?? [];
                     return (
                       <div
                         key={collection.id}
-                        className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 transition-shadow hover:shadow-md"
+                        className="flex h-[460px] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 transition-shadow hover:shadow-md sm:h-[500px]"
                       >
-                        <div className="flex items-start justify-between gap-3 bg-white px-4 py-3">
+                        <div className="flex min-h-[64px] items-start justify-between gap-3 bg-white px-4 py-3">
                           <div className="min-w-0">
                             <h3 className="line-clamp-1 font-serif text-base font-bold text-stone-800">
                               {collection.title || "未命名集字作品"}
@@ -312,10 +313,9 @@ export default async function PersonalPage({
                             >
                               <BookOpen className="h-4 w-4" />
                             </Link>
-                            <DeleteCollectionButton id={collection.id} />
                           </div>
                         </div>
-                        <div className="p-3">
+                        <div className="min-h-0 flex-1 overflow-y-auto p-3 pr-2 pb-4">
                           <CollectionPreviewGlyphs
                             collectionId={collection.id}
                             initialDirection={
@@ -328,6 +328,29 @@ export default async function PersonalPage({
                             isAuthenticated={true}
                             likeReturnTo="/me"
                           />
+                        </div>
+                        <div className="relative z-20 mt-3 flex min-h-[76px] shrink-0 flex-col justify-center gap-2 border-t border-stone-200 bg-white px-3 py-3 text-sm text-stone-500 sm:min-h-[68px] sm:flex-row sm:items-center sm:justify-between">
+                          <span className="line-clamp-1 min-w-0">
+                            {collection.text}｜{collection.item_count} 個字圖
+                          </span>
+                          <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-end">
+                            {collection.source_set_id && collection.source_image_url && (
+                            <SourceImagePreview
+                              src={`/api/glyph-sets/${collection.source_set_id}/source`}
+                              char={collection.text.slice(0, 1)}
+                              setId={collection.source_set_id}
+                              variant="compact"
+                            />
+                            )}
+                            <Link
+                              href={`/?collectionId=${collection.id}`}
+                              className="inline-flex min-h-9 flex-1 items-center justify-center gap-1 rounded-lg border border-stone-300 px-3 py-1 font-bold text-stone-600 hover:border-red-700 hover:text-stone-900 sm:flex-none sm:px-2"
+                            >
+                              <Search className="h-3 w-3" />
+                              載入
+                            </Link>
+                            <DeleteCollectionButton id={collection.id} />
+                          </div>
                         </div>
                       </div>
                     );

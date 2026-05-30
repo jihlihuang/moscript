@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, LogOut, Upload } from "lucide-react";
+import { ArrowLeft, Upload } from "lucide-react";
+import { LogoutButton } from "@/components/LogoutButton";
 import { AdminGlyphUploadForm } from "@/components/AdminGlyphUploadForm";
 import { LogoMark } from "@/components/LogoMark";
 import { getCurrentUser } from "@/lib/auth";
@@ -76,15 +77,9 @@ export default async function UploadGlyphPage() {
               <ArrowLeft className="h-4 w-4" />
               回個人頁
             </Link>
-            <form action="/api/auth/logout?returnTo=/" method="post">
-              <button
-                type="submit"
-                className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
-              >
-                <LogOut className="h-4 w-4" />
-                登出
-              </button>
-            </form>
+            <LogoutButton
+              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-stone-300 px-4 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-stone-900"
+            />
           </div>
         </div>
       </header>

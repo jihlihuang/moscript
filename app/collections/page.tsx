@@ -15,6 +15,9 @@ type CollectionSummary = {
   title: string;
   text: string;
   display_direction: "horizontal" | "vertical" | null;
+  source_set_id: number | null;
+  source_set_name: string | null;
+  source_image_url: string | null;
   created_at: string;
   item_count: number;
 };
@@ -47,10 +50,14 @@ export default async function CollectionsPage() {
       c.title,
       c.text,
       c.display_direction,
+      c.source_set_id,
+      c.source_set_name,
+      gs.source_image_url,
       c.created_at,
       COUNT(ci.id) AS item_count
     FROM collections c
     LEFT JOIN collection_items ci ON ci.collection_id = c.id
+    LEFT JOIN glyph_sets gs ON gs.id = c.source_set_id
     WHERE c.user_id = ?
     GROUP BY c.id
     ORDER BY c.id DESC
