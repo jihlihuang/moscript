@@ -724,8 +724,8 @@ export default function AdminPage() {
               const display = set.members;
               return (
               <div key={set.id}
-                className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-all"
-                style={isExpanded ? { gridColumn: "1 / -1" } : {}}>
+                className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-all"
+                style={isExpanded ? { gridColumn: "1 / -1" } : { height: "360px" }}>
 
                 {/* ── 卡片頂部：名稱 + 原圖 + 操作按鈕 ── */}
                 <div className="flex items-start justify-between gap-3 border-b border-stone-100 px-4 py-3">
@@ -758,10 +758,10 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* ── 字圖展示區（黃金比例格線，max 8）── */}
-                {!isExpanded && <div className="px-3 py-3">
+                {/* ── 字圖展示區（捲動預覽）── */}
+                {!isExpanded && <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
                   {display.length > 0 ? (
-                    <div className={`grid gap-2 ${isExpanded ? "grid-cols-6 sm:grid-cols-8 lg:grid-cols-10" : "grid-cols-4"}`}>
+                    <div className="grid grid-cols-4 gap-2">
                       {display.map((m) => (
                         <a key={m.id} href={`/glyph/${m.id}`}
                           className="group flex flex-col items-center rounded-lg border border-stone-100 bg-stone-50 p-1 transition-all hover:border-red-300 hover:bg-red-50">
@@ -781,7 +781,7 @@ export default function AdminPage() {
 
                 {/* ── 彙總資訊列 ── */}
                 {(authors.length > 0 || scripts.length > 0 || works.length > 0) && (
-                  <div className="border-t border-stone-100 bg-stone-50 px-4 py-2.5 text-xs text-stone-500">
+                  <div className="shrink-0 border-t border-stone-100 bg-stone-50 px-4 py-2.5 text-xs text-stone-500">
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {authors.length > 0 && <span><span className="font-bold text-stone-600">作者</span> {authors.join("、")}</span>}
                       {scripts.length > 0 && <span><span className="font-bold text-stone-600">書體</span> {scripts.join("、")}</span>}
