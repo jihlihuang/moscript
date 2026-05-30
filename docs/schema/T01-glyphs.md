@@ -29,6 +29,8 @@
 | `owner_user_email` | 所有者 Email | TEXT | 否 | NULL | 上傳者的 Email（非正規化，方便查詢） |
 | `owner_user_name` | 所有者名稱 | TEXT | 否 | NULL | 上傳者的顯示名稱（非正規化） |
 | `visibility` | 可見性 | TEXT | 是 | `'public'` | 可見性設定（`public` / `private`） |
+| `set_id` | 字組 ID | INTEGER | 否 | NULL | 所屬字組（`glyph_sets.id`），多字拆圖上傳時自動填入 |
+| `set_position` | 字組排序 | INTEGER | 否 | NULL | 在字組內的排序位置（1-based），批次上傳時依拆字順序填入 |
 | `created_at` | 建立時間 | TEXT | 是 | CURRENT_TIMESTAMP | ISO 8601 格式時間戳 |
 
 ---
@@ -64,6 +66,8 @@
 | `idx_glyphs_char_script` | `(char, script_type)` | 字＋書體複合查詢（最常用） |
 | `idx_glyphs_owner_user_id` | `owner_user_id` | 查詢個人上傳字圖 |
 | `idx_glyphs_visibility` | `visibility` | 篩選公開/私密 |
+| `idx_glyphs_set_id` | `set_id` | 查詢同字組的所有字圖 |
+| `idx_glyphs_set_position` | `(set_id, set_position)` | 依字組排序取字圖 |
 
 ---
 
@@ -85,6 +89,12 @@
 |--------|---------|---------|
 | `glyph_likes` | `glyph_id → glyphs.id` | CASCADE（字圖刪除，按讚記錄一起刪除） |
 | `collection_items` | `glyph_id → glyphs.id` | CASCADE（字圖刪除，集字項目一起刪除） |
+
+## 9. 外鍵參照（參照其他表）
+
+| 參照表 | 欄位 | 說明 |
+|--------|------|------|
+| `glyph_sets` | `set_id → glyph_sets.id` | 多字拆圖上傳時關聯字組（無 FK 約束，soft reference） |
 
 ---
 

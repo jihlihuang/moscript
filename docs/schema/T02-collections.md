@@ -23,6 +23,8 @@
 | `text` | 集字文字 | TEXT | 是 | — | 此作品包含的所有中文字（如：「山水」） |
 | `display_direction` | 顯示方向 | TEXT | 是 | `'horizontal'` | 字圖排列方向（`horizontal` / `vertical`） |
 | `visibility` | 可見性 | TEXT | 是 | `'public'` | 可見性設定（`public` / `private`） |
+| `source_set_id` | 來源字組 ID | INTEGER | 否 | NULL | 集字來源的字組 ID（`glyph_sets.id`），從字組直接集字時填入 |
+| `source_set_name` | 來源字組名稱 | TEXT | 否 | NULL | 非正規化的來源字組名稱，方便顯示用 |
 | `created_at` | 建立時間 | TEXT | 是 | CURRENT_TIMESTAMP | ISO 8601 格式時間戳 |
 
 ---
@@ -83,6 +85,8 @@
 | `user_name` | 初版未記錄建立者 |
 | `display_direction` | 初版未支援直排 |
 | `visibility` | 初版所有作品均公開 |
+| `source_set_id` | 新增字組來源追蹤 |
+| `source_set_name` | 非正規化名稱，方便顯示 |
 
 ---
 
