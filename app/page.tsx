@@ -651,7 +651,8 @@ export default function FrontStagePage() {
               <LogoMark
                 onClick={handleLogoClick}
                 title={logoClickCount > 0 ? `距離解鎖還有 ${10 - logoClickCount} 步` : undefined}
-                imageClassName="h-10 w-10 sm:h-12 sm:w-12"
+                imageClassName="h-9 w-9 sm:h-12 sm:w-12"
+                showAllMobile
               />
               <div>
                 <h1 className="sr-only">墨跡字帖</h1>

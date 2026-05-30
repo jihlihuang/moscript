@@ -5,6 +5,7 @@ type LogoMarkProps = {
   title?: string;
   className?: string;
   imageClassName?: string;
+  showAllMobile?: boolean;
 };
 
 const logoGlyphs = [
@@ -26,7 +27,7 @@ const logoGlyphs = [
   },
 ];
 
-export function LogoMark({ onClick, title, className = "", imageClassName = "h-12 w-12" }: LogoMarkProps) {
+export function LogoMark({ onClick, title, className = "", imageClassName = "h-12 w-12", showAllMobile = false }: LogoMarkProps) {
   return (
     <div
       className={`flex items-center -ml-2 select-none ${onClick ? "cursor-pointer" : ""} ${className}`}
@@ -34,12 +35,12 @@ export function LogoMark({ onClick, title, className = "", imageClassName = "h-1
       title={title}
       aria-label="墨跡字帖"
     >
-      {logoGlyphs.map((glyph) => (
+      {logoGlyphs.map((glyph, index) => (
         <img
           key={glyph.char}
           src={glyph.src}
           alt={glyph.char}
-          className={`${imageClassName} object-contain mix-blend-multiply pointer-events-none`}
+          className={`${imageClassName} object-contain mix-blend-multiply pointer-events-none${!showAllMobile && index >= 2 ? " hidden sm:block" : ""}`}
         />
       ))}
     </div>

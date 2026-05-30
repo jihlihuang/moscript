@@ -173,7 +173,7 @@ export default async function PersonalPage({
       <header className="sticky top-0 z-50 border-b border-stone-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
           <Link href="/" className="flex min-w-0 items-center gap-3">
-            <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
+            <LogoMark imageClassName="h-9 w-9 sm:h-12 sm:w-12" />
             <div className="min-w-0">
               <h1 className="truncate font-serif text-xl font-bold sm:text-2xl">個人頁</h1>
               <p className="truncate text-xs text-stone-500 sm:text-sm">管理字圖與集字作品</p>

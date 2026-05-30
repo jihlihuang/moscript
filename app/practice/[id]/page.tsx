@@ -95,7 +95,7 @@ export default async function PracticePage({ params, searchParams }: Params) {
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
+            <LogoMark imageClassName="h-9 w-9 sm:h-12 sm:w-12" />
             <div className="min-w-0">
               <h1 className="truncate font-serif text-xl font-bold sm:text-2xl">單字練習｜{glyph.char}</h1>
               <p className="truncate text-xs text-stone-500 sm:text-sm">手指觸控臨摹練習</p>

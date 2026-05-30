@@ -2134,7 +2134,7 @@ export function AdminGlyphUploadForm({
   }
 
   function eraseUploadPreviewAt(e: PointerEvent<HTMLCanvasElement>) {
-    const canvas = uploadPreviewCanvasRef.current;
+    const canvas = uploadEditCanvasRef.current;
     const point = getUploadPreviewPoint(e);
     if (!canvas || !point) return;
     const ctx = canvas.getContext("2d");
@@ -2149,7 +2149,7 @@ export function AdminGlyphUploadForm({
   }
 
   function pushUploadUndoState() {
-    const canvas = uploadPreviewCanvasRef.current;
+    const canvas = uploadEditCanvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
 

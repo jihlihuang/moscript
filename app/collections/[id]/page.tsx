@@ -142,7 +142,7 @@ export default async function CollectionPage({ params }: Params) {
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-4">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <LogoMark imageClassName="h-10 w-10 sm:h-12 sm:w-12" />
+              <LogoMark imageClassName="h-9 w-9 sm:h-12 sm:w-12" />
               <div className="min-w-0">
                 <h1 className="truncate font-serif text-xl font-bold sm:text-2xl">{collection.title}</h1>
                 <p className="text-xs text-stone-500 sm:text-sm">集字作品｜{collection.created_at}</p>
