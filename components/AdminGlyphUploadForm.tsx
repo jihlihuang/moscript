@@ -1809,6 +1809,7 @@ export function AdminGlyphUploadForm({
   }
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const [batchUploadCount, setBatchUploadCount] = useState(0);
   const [batchEditingId, setBatchEditingId] = useState<string | null>(null);
   const [batchEditEraserSize, setBatchEditEraserSize] = useState(44);
   const [batchEditColorMode, setBatchEditColorMode] = useState<UploadColorMode>("bw");
@@ -2639,6 +2640,7 @@ export function AdminGlyphUploadForm({
     setBatchMissingCharIds(new Set());
 
     setIsBatchUploading(true);
+    setBatchUploadCount(0);
     setMessage("批次上傳中...");
 
     // 建立字組並上傳原圖
@@ -2716,6 +2718,7 @@ export function AdminGlyphUploadForm({
               candidate.id === item.id ? { ...candidate, status: "error", message: json.error ?? "上傳失敗" } : candidate
             )
           );
+          setBatchUploadCount((n) => n + 1);
           continue;
         }
         successCount += 1;
@@ -2724,6 +2727,7 @@ export function AdminGlyphUploadForm({
             candidate.id === item.id ? { ...candidate, status: "done", message: `ID ${json.id}` } : candidate
           )
         );
+        setBatchUploadCount((n) => n + 1);
       }
       const failureCount = batchItems.length - successCount;
       setMessage(`批次上傳完成：成功 ${successCount} 筆，失敗 ${failureCount} 筆`);
@@ -3673,6 +3677,20 @@ export function AdminGlyphUploadForm({
                 {isBatchProcessing ? "拆字中" : isBatchUploading ? "批次上傳中" : `批次上傳 ${batchItems.length || ""}`}
               </button>
             </div>
+            {isBatchUploading && batchItems.length > 0 && (
+              <div className="mt-2 space-y-1">
+                <div className="flex justify-between text-xs text-stone-500">
+                  <span>上傳進度</span>
+                  <span>{batchUploadCount} / {batchItems.length}</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-stone-200">
+                  <div
+                    className="h-full rounded-full bg-red-700 transition-all duration-300"
+                    style={{ width: `${Math.round((batchUploadCount / batchItems.length) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-xs text-stone-500">
