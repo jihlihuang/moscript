@@ -56,6 +56,8 @@ export async function POST(req: NextRequest) {
   const title = truncate(String(body.title || body.text || "未命名集字作品").trim(), MAX_COLLECTION_TITLE_LEN);
   const text = truncate(String(body.text || "").trim(), MAX_COLLECTION_TEXT_LEN);
   const displayDirection = body.displayDirection === "vertical" ? "vertical" : "horizontal";
+  const sourceSetId = Number(body.sourceSetId);
+  const normalizedSourceSetId = Number.isInteger(sourceSetId) && sourceSetId > 0 ? sourceSetId : null;
   const items = normalizeItems((body.items || []) as IncomingItem[]).slice(0, MAX_COLLECTION_ITEMS);
 
   if (!text || items.length === 0) {
@@ -66,6 +68,9 @@ export async function POST(req: NextRequest) {
   }
 
   const db = await getDb();
+  const sourceSet = normalizedSourceSetId
+    ? db.prepare("SELECT id, name FROM glyph_sets WHERE id = ?").get(normalizedSourceSetId) as { id: number; name: string | null } | undefined
+    : undefined;
 
   const save = db.transaction(() => {
     const incomingSignature = itemsSignature(items);
@@ -97,8 +102,8 @@ export async function POST(req: NextRequest) {
     }
 
     const collection = db
-      .prepare("INSERT INTO collections (user_id, user_email, user_name, title, text, display_direction) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(user.id, user.email, user.name, title, text, displayDirection);
+      .prepare("INSERT INTO collections (user_id, user_email, user_name, title, text, display_direction, source_set_id, source_set_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(user.id, user.email, user.name, title, text, displayDirection, sourceSet?.id ?? null, sourceSet?.name ?? null);
 
     const collectionId = Number(collection.lastInsertRowid);
     const insertItem = db.prepare(`

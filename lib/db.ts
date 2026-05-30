@@ -26,6 +26,7 @@ export type GlyphRow = {
   owner_user_name: string | null;
   visibility: string | null;
   set_id: number | null;
+  set_position: number | null;
   like_count?: number;
   collection_count?: number;
   liked_by_me?: number;
@@ -34,6 +35,7 @@ export type GlyphRow = {
 
 export type GlyphSetRow = {
   id: number;
+  name: string | null;
   source_image_url: string | null;
   owner_user_id: string | null;
   created_at: string;
@@ -112,6 +114,8 @@ export function initSchema(db: Database.Database) {
       title TEXT NOT NULL,
       text TEXT NOT NULL,
       display_direction TEXT DEFAULT 'horizontal',
+      source_set_id INTEGER,
+      source_set_name TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS collection_items (
@@ -198,6 +202,7 @@ export function initSchema(db: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS glyph_sets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
       source_image_url TEXT,
       owner_user_id TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -222,8 +227,15 @@ export function initSchema(db: Database.Database) {
   if (!collectionColumnNames.has("visibility")) {
     db.prepare("ALTER TABLE collections ADD COLUMN visibility TEXT DEFAULT 'public'").run();
   }
+  if (!collectionColumnNames.has("source_set_id")) {
+    db.prepare("ALTER TABLE collections ADD COLUMN source_set_id INTEGER").run();
+  }
+  if (!collectionColumnNames.has("source_set_name")) {
+    db.prepare("ALTER TABLE collections ADD COLUMN source_set_name TEXT").run();
+  }
   db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_visibility ON collections(visibility)").run();
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_collections_source_set_id ON collections(source_set_id)").run();
 
   const glyphColumns = db.prepare("PRAGMA table_info(glyphs)").all() as { name: string }[];
   const glyphColumnNames = new Set(glyphColumns.map((column) => column.name));
@@ -246,7 +258,19 @@ export function initSchema(db: Database.Database) {
     db.prepare("ALTER TABLE glyphs ADD COLUMN set_id INTEGER").run();
     db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_set_id ON glyphs(set_id)").run();
   }
+  if (!glyphColumnNames.has("set_position")) {
+    db.prepare("ALTER TABLE glyphs ADD COLUMN set_position INTEGER").run();
+  }
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_set_position ON glyphs(set_id, set_position)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_owner_user_id ON glyphs(owner_user_id)").run();
+
+  const setColumns = db.prepare("PRAGMA table_info(glyph_sets)").all() as { name: string }[];
+  const setColNames = new Set(setColumns.map((c) => c.name));
+  if (!setColNames.has("name")) {
+    db.prepare("ALTER TABLE glyph_sets ADD COLUMN name TEXT").run();
+  }
+  // 無論欄位是剛加的還是已存在，都安全地確保 index 存在
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_glyph_sets_name ON glyph_sets(name)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_visibility ON glyphs(visibility)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_collection_items_glyph_id ON collection_items(glyph_id)").run();
   migrateLocalPrivateGlyphFiles(db);

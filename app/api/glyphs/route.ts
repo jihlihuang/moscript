@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const q = params.get("q") ?? "";
   const author = params.get("author") ?? "";
+  const workTitle = params.get("workTitle") ?? "";
   const scriptType = params.get("scriptType") ?? "";
   const scriptTypes = params.getAll("scriptTypes").flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean);
   const char = params.get("char") ?? "";
@@ -31,7 +32,8 @@ export async function GET(req: NextRequest) {
   const glyphs = await searchGlyphs({
     q,
     char,
-    author,
+    author: author || undefined,
+    workTitle: workTitle || undefined,
     scriptType,
     scriptTypes,
     perChar,

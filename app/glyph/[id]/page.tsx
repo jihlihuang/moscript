@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, BookOpen, Library, PencilLine } from "lucide-react";
 import { getCurrentUser, isAdminAllowed } from "@/lib/auth";
+import { SourceImagePreview } from "@/components/SourceImagePreview";
 import { canAccessGlyph, glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { getDb, type GlyphRow, type GlyphSetRow } from "@/lib/db";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
@@ -51,7 +52,7 @@ export default async function GlyphDetailPage({ params }: Params) {
         SELECT id, char, thumbnail_url, image_url, visibility, owner_user_id
         FROM glyphs WHERE set_id = ? AND id != ?
           AND (visibility = 'public' OR owner_user_id = ?)
-        ORDER BY id ASC LIMIT 20
+        ORDER BY COALESCE(set_position, id), id ASC LIMIT 20
       `).all(glyph.set_id, glyph.id, user?.id ?? "") as SetSibling[];
       const isOwner = user && (user.id === set.owner_user_id || isAdminAllowed(user));
       glyphSet = {
@@ -160,10 +161,7 @@ export default async function GlyphDetailPage({ params }: Params) {
                 同字組的字（{glyphSet.siblings.length + 1} 個字）
               </div>
               {glyphSet.sourceUrl && (
-                <a href={glyphSet.sourceUrl} target="_blank" rel="noopener noreferrer" className="mb-3 flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600 hover:border-red-700 hover:text-red-800">
-                  <Image src={glyphSet.sourceUrl} alt="字組原圖" width={48} height={48} className="h-12 w-12 rounded-lg object-contain bg-white" unoptimized />
-                  <span className="font-medium">查看原圖（ID {glyphSet.id}）</span>
-                </a>
+                <SourceImagePreview src={glyphSet.sourceUrl} char={glyph.char} setId={glyphSet.id} />
               )}
               {glyphSet.siblings.length > 0 ? (
                 <div className="flex flex-wrap gap-2">

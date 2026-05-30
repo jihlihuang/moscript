@@ -18,12 +18,15 @@ export type GlyphDto = {
   likeCount: number;
   collectionCount: number;
   likedByMe: boolean;
+  setId: number | null;
+  setPosition: number | null;
 };
 
 export type SearchGlyphOptions = {
   q?: string;
   char?: string;
   author?: string;
+  workTitle?: string;
   scriptType?: string;
   scriptTypes?: string[];
   perChar?: number;
@@ -58,6 +61,8 @@ export function toGlyphDto(row: GlyphRow): GlyphDto {
     likeCount: Number(row.like_count ?? 0),
     collectionCount: Number(row.collection_count ?? 0),
     likedByMe: Boolean(row.liked_by_me),
+    setId: row.set_id ?? null,
+    setPosition: row.set_position ?? null,
   };
 }
 
@@ -117,7 +122,7 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
     ...(options.scriptType ? [options.scriptType] : []),
   ].map((script) => script.trim()).filter(Boolean);
 
-  if (chars.length === 0 && !options.author && selectedScriptTypes.length === 0) {
+  if (chars.length === 0 && !options.author && !options.workTitle && selectedScriptTypes.length === 0) {
     const rows = db
       .prepare(`
         SELECT ${glyphSelectSql}
@@ -141,6 +146,11 @@ export async function searchGlyphs(options: SearchGlyphOptions) {
   if (options.author) {
     where.push("g.author LIKE ?");
     params.push(`%${options.author}%`);
+  }
+
+  if (options.workTitle) {
+    where.push("g.work_title LIKE ?");
+    params.push(`%${options.workTitle}%`);
   }
 
   if (selectedScriptTypes.length > 0) {

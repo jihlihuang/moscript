@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       SELECT * FROM glyphs
       WHERE set_id = ? AND id != ?
         AND (visibility = 'public' OR owner_user_id = ?)
-      ORDER BY id ASC
+      ORDER BY COALESCE(set_position, id), id ASC
     `).all(glyph.set_id, glyph.id, user?.id ?? "") as GlyphRow[];
 
     const isOwner = user && (user.id === set?.owner_user_id || isAdminAllowed(user));

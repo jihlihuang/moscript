@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, BookOpen, Check, CheckCircle2, Database, ExternalLink, Filter, LogIn, LogOut, Menu, RefreshCw, Search, UserRound, X } from "lucide-react";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { toast } from "sonner";
 import { GlyphImage, type GlyphLike } from "@/components/GlyphImage";
 import { LogoMark } from "@/components/LogoMark";
@@ -50,6 +51,7 @@ type CollectionSavePayload = {
   text: string;
   author?: string;
   scriptType?: string;
+  sourceSetId?: number | null;
   selectedGlyphs?: SelectedGlyph[];
   items: {
     glyphId: number;
@@ -81,6 +83,16 @@ function sortScriptLabels(labels: string[]) {
 }
 
 export default function FrontStagePage() {
+  const [searchTab, setSearchTab] = useState<"glyphs" | "sets">("glyphs");
+  const [setsQuery, setSetsQuery] = useState("");
+  const [isComposingSetsQuery, setIsComposingSetsQuery] = useState(false);
+  type SetSearchMember = { id: number; char: string; author: string | null; scriptType: string | null; workTitle: string | null; qualityScore: number; imageUrl: string; thumbnailUrl: string | null };
+  type SetSearchResult = { id: number; name: string | null; members: SetSearchMember[]; sourceImageUrl: string | null; createdAt: string };
+  const [setsResults, setSetsResults] = useState<SetSearchResult[]>([]);
+  const [selectedSetSource, setSelectedSetSource] = useState<{ id: number; name: string | null; sourceImageUrl: string | null } | null>(null);
+  const [selectedSetResultGlyphs, setSelectedSetResultGlyphs] = useState<GlyphDto[]>([]);
+  const [setsLoading, setSetsLoading] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [isComposingQuery, setIsComposingQuery] = useState(false);
   const [author, setAuthor] = useState("");
@@ -97,6 +109,7 @@ export default function FrontStagePage() {
   const [loading, setLoading] = useState(false);
   const [isSavingCollection, setIsSavingCollection] = useState(false);
   const [message, setMessage] = useState("");
+  const [duplicateConflict, setDuplicateConflict] = useState<{ id: number; url: string; payload: CollectionSavePayload } | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isAdminVisible, setIsAdminVisible] = useState(false);
@@ -110,6 +123,7 @@ export default function FrontStagePage() {
   const loadMoreSentinelRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const loadingMoreCharsRef = useRef<Record<string, boolean>>({});
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const setsSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -164,6 +178,7 @@ export default function FrontStagePage() {
           : [],
     [activePosition, queryChars]
   );
+  const isSetResultMode = selectedSetResultGlyphs.length > 0;
 
   const scriptFilters = useMemo(() => availableScripts, [availableScripts]);
   const saveResult = useMemo(() => {
@@ -180,7 +195,7 @@ export default function FrontStagePage() {
         type: "duplicate" as const,
         url: message.replace("已存在：", ""),
         title: "這份集字作品已存在",
-        description: "系統找到相同文字與相同字圖選擇，已為你保留原本那一筆。",
+        description: "系統找到相同文字與相同字圖選擇，你可以更新集字作品或取消這次集字。",
       };
     }
     if (message.startsWith("已更新：")) {
@@ -337,6 +352,24 @@ export default function FrontStagePage() {
     void loadAvailableScripts();
   }, [author, q, queryChars.length, resultScope]);
 
+  async function searchSets(keyword = setsQuery) {
+    if (!keyword.trim()) { setSetsResults([]); return; }
+    setSetsLoading(true);
+    try {
+      const res = await fetch(`/api/glyph-sets?q=${encodeURIComponent(keyword.trim())}&limit=30`);
+      if (!res.ok) return;
+      const json = await res.json() as { sets: typeof setsResults };
+      setSetsResults(json.sets);
+    } finally {
+      setSetsLoading(false);
+    }
+  }
+
+  function scheduleSetSearch(keyword: string) {
+    if (setsSearchTimeoutRef.current) clearTimeout(setsSearchTimeoutRef.current);
+    setsSearchTimeoutRef.current = setTimeout(() => void searchSets(keyword), 500);
+  }
+
   async function searchGlyphs(
     nextScriptTypes = selectedScriptTypes,
     preservePosition = false,
@@ -348,6 +381,8 @@ export default function FrontStagePage() {
     if (cleanedQ !== q) {
       setQ(cleanedQ);
       setSelected([]);
+      setSelectedSetSource(null);
+      setSelectedSetResultGlyphs([]);
       if (!preservePosition) setActivePosition(null);
     }
 
@@ -358,6 +393,10 @@ export default function FrontStagePage() {
       return;
     }
 
+    if (!preservePosition) {
+      setSelectedSetSource(null);
+      setSelectedSetResultGlyphs([]);
+    }
     setLoading(true);
     setMessage("");
     setLoadingMoreChars({});
@@ -451,6 +490,73 @@ export default function FrontStagePage() {
     });
   }
 
+  function setSearchDataFromSet(set: SetSearchResult) {
+    const setText = onlyChinese(set.name ?? "") || set.members.map((member) => member.char).join("");
+    const glyphsInOrder = set.members.map((member) => ({
+      id: member.id,
+      char: member.char,
+      author: member.author,
+      scriptType: member.scriptType,
+      workTitle: member.workTitle,
+      imageUrl: member.imageUrl,
+      thumbnailUrl: member.thumbnailUrl,
+      qualityScore: member.qualityScore,
+      likeCount: 0,
+      collectionCount: 0,
+      likedByMe: false,
+    }));
+    const results = set.members.reduce<Record<string, GlyphDto[]>>((acc, member) => {
+      const glyph: GlyphDto = {
+        id: member.id,
+        char: member.char,
+        author: member.author,
+        scriptType: member.scriptType,
+        workTitle: member.workTitle,
+        imageUrl: member.imageUrl,
+        thumbnailUrl: member.thumbnailUrl,
+        qualityScore: member.qualityScore,
+        likeCount: 0,
+        collectionCount: 0,
+        likedByMe: false,
+      };
+      (acc[member.char] ??= []).push(glyph);
+      return acc;
+    }, {});
+
+    setQ(setText);
+    setCollectionTitle(set.name || setText);
+    setSelectedSetSource({ id: set.id, name: set.name, sourceImageUrl: set.sourceImageUrl });
+    setSelectedSetResultGlyphs(glyphsInOrder);
+    setActivePosition(null);
+    setData({
+      query: setText,
+      chars: [...new Set(Array.from(setText).filter((char) => char.trim() !== ""))],
+      results,
+      total: set.members.length,
+      hasMoreByChar: {},
+    });
+  }
+
+  function addSetToCollection(set: SetSearchResult) {
+    setSearchDataFromSet(set);
+    const selectedGlyphs = set.members.map((member, index) => ({
+      id: member.id,
+      char: member.char,
+      author: member.author,
+      scriptType: member.scriptType,
+      workTitle: member.workTitle,
+      imageUrl: member.imageUrl,
+      thumbnailUrl: member.thumbnailUrl,
+      qualityScore: member.qualityScore,
+      likeCount: 0,
+      collectionCount: 0,
+      likedByMe: false,
+      position: index,
+    }));
+    setSelected(selectedGlyphs);
+    setMessage(`已將字組「${set.name || `#${set.id}`}」加入目前集字`);
+  }
+
   function updateGlyphLike(glyphId: number, stats: { liked: boolean; likeCount: number; collectionCount: number }) {
     const patchGlyph = <T extends GlyphDto>(glyph: T): T =>
       glyph.id === glyphId
@@ -500,6 +606,12 @@ export default function FrontStagePage() {
     setAuthor(payload.author ?? "");
     setSelectedScriptTypes(payload.scriptType ? payload.scriptType.split(",").map((script) => script.trim()).filter(Boolean) : []);
     setSelected(payload.selectedGlyphs ?? []);
+    setSelectedSetSource(payload.sourceSetId ? {
+      id: payload.sourceSetId,
+      name: null,
+      sourceImageUrl: `/api/glyph-sets/${payload.sourceSetId}/source`,
+    } : null);
+    setSelectedSetResultGlyphs([]);
     setActivePosition(null);
   }
 
@@ -539,6 +651,12 @@ export default function FrontStagePage() {
       setQ(json.collection.text);
       setCollectionTitle(json.collection.title || json.collection.text);
       setEditingCollectionId(Number(json.collection.id));
+      setSelectedSetSource(json.collection.source_set_id ? {
+        id: Number(json.collection.source_set_id),
+        name: json.collection.source_set_name ?? null,
+        sourceImageUrl: `/api/glyph-sets/${json.collection.source_set_id}/source`,
+      } : null);
+      setSelectedSetResultGlyphs([]);
       setAuthor("");
       setSelectedScriptTypes(loadedScriptType ? [loadedScriptType] : []);
       setSelected(selectedGlyphs);
@@ -588,10 +706,33 @@ export default function FrontStagePage() {
       if (options.clearPendingOnSuccess) {
         localStorage.removeItem(pendingCollectionKey);
       }
-      setMessage(isUpdate ? `已更新：${json.url}` : json.duplicate ? `已存在：${json.url}` : `已儲存：${json.url}`);
+      if (!isUpdate && json.duplicate) {
+        setDuplicateConflict({ id: Number(json.id), url: json.url, payload });
+        setMessage(`已存在：${json.url}`);
+        return;
+      }
+      setDuplicateConflict(null);
+      setMessage(isUpdate ? `已更新：${json.url}` : `已儲存：${json.url}`);
     } finally {
       setIsSavingCollection(false);
     }
+  }
+
+  async function overwriteDuplicateCollection() {
+    if (!duplicateConflict || isSavingCollection) return;
+    setMessage("");
+    await saveCollectionPayload(duplicateConflict.payload, { collectionId: duplicateConflict.id });
+    setEditingCollectionId(duplicateConflict.id);
+    setDuplicateConflict(null);
+  }
+
+  function cancelDuplicateCollection() {
+    setDuplicateConflict(null);
+    setMessage("");
+    setSelected([]);
+    setActivePosition(null);
+    setSelectedSetSource(null);
+    setSelectedSetResultGlyphs([]);
   }
 
   async function saveCollection() {
@@ -605,6 +746,7 @@ export default function FrontStagePage() {
       text: q,
       author,
       scriptType: selectedScriptTypes.join(","),
+      sourceSetId: selectedSetSource?.id ?? null,
       selectedGlyphs: selected,
       items: selected.map((item) => ({
         glyphId: item.id,
@@ -631,6 +773,7 @@ export default function FrontStagePage() {
       text: q,
       author,
       scriptType: selectedScriptTypes.join(","),
+      sourceSetId: selectedSetSource?.id ?? null,
       selectedGlyphs: selected,
       items: selected.map((item) => ({
         glyphId: item.id,
@@ -752,6 +895,84 @@ export default function FrontStagePage() {
 
         {/* LEFT: Search + Filters */}
         <aside className="space-y-3 lg:sticky lg:top-[81px]">
+          {/* 頁籤切換 */}
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+            {([["glyphs", "字圖查詢"], ["sets", "字組查詢"]] as const).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => { setSearchTab(tab); setSetsResults([]); }}
+                className={`min-h-9 rounded-lg text-sm font-bold transition ${
+                  searchTab === tab ? "bg-white text-red-800 shadow-sm" : "text-stone-500 hover:text-stone-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {searchTab === "sets" ? (
+            <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+              <form onSubmit={(e) => { e.preventDefault(); void searchSets(); }} className="space-y-2">
+                <div className="flex gap-2">
+                  <label className="relative block flex-1">
+                    <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
+                    <input
+                      value={setsQuery}
+                      onCompositionStart={() => setIsComposingSetsQuery(true)}
+                      onCompositionEnd={(e) => {
+                        setIsComposingSetsQuery(false);
+                        const nextQuery = e.currentTarget.value;
+                        setSetsQuery(nextQuery);
+                        scheduleSetSearch(nextQuery);
+                      }}
+                      onChange={(e) => {
+                        const nativeEvent = e.nativeEvent as InputEvent;
+                        const nextQuery = e.target.value;
+                        setSetsQuery(nextQuery);
+                        if (!isComposingSetsQuery && !nativeEvent.isComposing) {
+                          scheduleSetSearch(nextQuery);
+                        }
+                      }}
+                      placeholder="輸入字組關鍵字"
+                      className="w-full rounded-xl border border-stone-300 bg-stone-50 py-2 pl-10 pr-10 outline-none focus:border-red-700"
+                      autoComplete="off"
+                    />
+                    {setsQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSetsQuery("");
+                          setSetsResults([]);
+                          setData(null);
+                          setQ("");
+                          setSelected([]);
+                          setActivePosition(null);
+                          setSelectedSetSource(null);
+                          setSelectedSetResultGlyphs([]);
+                          setMessage("");
+                          setDuplicateConflict(null);
+                          if (setsSearchTimeoutRef.current) clearTimeout(setsSearchTimeoutRef.current);
+                        }}
+                        className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-200 hover:text-stone-600"
+                        aria-label="清除字組搜尋"
+                        title="清除搜尋"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    )}
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={setsLoading || !setsQuery.trim()}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {setsLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (<>
           <div className="rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
             <form
               onSubmit={(e) => {
@@ -945,10 +1166,124 @@ export default function FrontStagePage() {
               </div>
             </div>
           )}
+          </> )}
         </aside>
 
         {/* CENTER: Mobile strip + Results */}
         <section className="mt-3 min-w-0 space-y-3 lg:mt-0">
+
+          {/* 字組查詢結果 */}
+          {searchTab === "sets" && (
+            <div>
+              {setsLoading && (
+                <div className="flex items-center justify-center py-12 text-stone-400">
+                  <RefreshCw className="mr-2 h-5 w-5 animate-spin" />查詢中...
+                </div>
+              )}
+              {!setsLoading && setsResults.length === 0 && setsQuery.trim() && (
+                <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center text-sm text-stone-500">
+                  找不到符合「{setsQuery}」的字組
+                </div>
+              )}
+              {!setsLoading && setsResults.length === 0 && !setsQuery.trim() && (
+                <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center text-sm text-stone-500">
+                  輸入關鍵字搜尋字組
+                </div>
+              )}
+              {setsResults.length > 0 && (
+                <div>
+                  <div className="mb-3 text-sm text-stone-500">共找到 {setsResults.length} 個字組</div>
+                  {/* 黃金比例格線：2 欄，卡片寬高比 ≈ 1.618:1 */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {setsResults.map((set) => {
+                      const authors = [...new Set(set.members.map((m) => m.author).filter(Boolean))];
+                      const scripts = [...new Set(set.members.map((m) => m.scriptType).filter(Boolean))];
+                      const works   = [...new Set(set.members.map((m) => m.workTitle).filter(Boolean))];
+                      const display = set.members.slice(0, 8);
+                      const extra   = set.members.length - 8;
+                      return (
+                      <div key={set.id} className={`flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm ${
+                        selectedSetSource?.id === set.id ? "border-red-700 shadow-[0_0_0_3px_rgba(185,28,28,0.12)]" : "border-stone-200"
+                      }`}>
+                        {/* 頂：名稱 + 原圖縮圖 */}
+                        <div className="flex items-start gap-3 border-b border-stone-100 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="truncate font-serif text-base font-bold text-stone-900">
+                              {set.name || <span className="italic text-stone-400 text-sm">未命名字組</span>}
+                            </h3>
+                            <p className="text-[11px] text-stone-400">{set.members.length} 個字圖</p>
+                          </div>
+                          {set.sourceImageUrl && (
+                            <button type="button" onClick={() => setLightboxSrc(set.sourceImageUrl)}
+                              title="查看拆字原圖" className="shrink-0 overflow-hidden rounded-lg border border-stone-100 hover:border-red-300 transition-colors">
+                              <img src={set.sourceImageUrl} alt="原圖" className="h-12 w-12 object-contain bg-stone-50 p-0.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* 中：字圖格（黃金比例內容區，max 8 個） */}
+                        <button type="button" onClick={() => setSearchDataFromSet(set)} className="block flex-1 px-3 py-3 text-left">
+                          {display.length > 0 ? (
+                            <div className="grid grid-cols-4 gap-2">
+                              {display.map((m) => (
+                                <span key={m.id}
+                                  className="group flex flex-col items-center rounded-lg border border-stone-100 bg-stone-50 p-1 transition-all hover:border-red-300 hover:bg-red-50">
+                                  <div className="aspect-square w-full overflow-hidden rounded-md border border-stone-100 bg-white">
+                                    <img src={m.thumbnailUrl ?? m.imageUrl} alt={m.char}
+                                      className="h-full w-full object-contain mix-blend-multiply" loading="lazy" />
+                                  </div>
+                                  <div className="mt-1 font-serif text-base font-bold text-stone-800 group-hover:text-red-800">{m.char}</div>
+                                  {m.scriptType && (
+                                    <span className="mt-0.5 truncate text-[9px] text-stone-400">{m.scriptType}</span>
+                                  )}
+                                </span>
+                              ))}
+                              {extra > 0 && (
+                                <div className="flex items-center justify-center rounded-lg border border-dashed border-stone-200 bg-stone-50 text-sm font-bold text-stone-400">
+                                  +{extra}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-xs text-stone-400">尚無字圖</div>
+                          )}
+                        </button>
+
+                        {/* 底：彙總資訊 */}
+                        {(authors.length > 0 || scripts.length > 0) && (
+                          <div className="border-t border-stone-100 bg-stone-50 px-3 py-2 text-[11px] text-stone-500">
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                              {authors.length > 0 && <span><span className="font-bold text-stone-600">作者</span> {authors.slice(0, 2).join("、")}{authors.length > 2 ? "…" : ""}</span>}
+                              {scripts.length > 0 && <span><span className="font-bold text-stone-600">書體</span> {scripts.join("、")}</span>}
+                              {works.length > 0   && <span className="hidden sm:inline"><span className="font-bold text-stone-600">作品</span> {works[0]}{works.length > 1 ? "…" : ""}</span>}
+                            </div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2 border-t border-stone-100 px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => setSearchDataFromSet(set)}
+                            className="min-h-9 rounded-xl border border-stone-300 bg-white px-3 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                          >
+                            查看字圖
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addSetToCollection(set)}
+                            disabled={set.members.length === 0}
+                            className="min-h-9 rounded-xl bg-red-800 px-3 text-xs font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            加入集字
+                          </button>
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Mobile character strip */}
           {queryChars.length > 0 && (
@@ -1042,15 +1377,34 @@ export default function FrontStagePage() {
                         </div>
                         <div className="text-sm font-bold">{saveResult.title}</div>
                       </div>
-                      <Link
-                        href={saveResult.url}
-                        className={`shrink-0 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-bold text-white ${
-                          saveResult.type === "duplicate" ? "bg-amber-700 hover:bg-amber-800" : "bg-emerald-700 hover:bg-emerald-800"
-                        }`}
-                      >
-                        查看
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Link>
+                      {saveResult.type === "duplicate" && duplicateConflict ? (
+                        <div className="flex shrink-0 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={overwriteDuplicateCollection}
+                            disabled={isSavingCollection}
+                            className="inline-flex items-center rounded-xl bg-amber-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50"
+                          >
+                            {isSavingCollection ? "更新中" : "更新集字作品"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelDuplicateCollection}
+                            disabled={isSavingCollection}
+                            className="inline-flex items-center rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                          >
+                            取消集字
+                          </button>
+                        </div>
+                      ) : (
+                        <Link
+                          href={saveResult.url}
+                          className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800"
+                        >
+                          查看
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Link>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -1078,23 +1432,41 @@ export default function FrontStagePage() {
             <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-stone-600">
               <Filter className="h-5 w-5" />
               <span>搜尋結果</span>
+              {selectedSetSource && (
+                <span className="rounded-lg border border-red-100 bg-red-50 px-2 py-1 text-xs font-bold text-red-800">
+                  來源字組：{selectedSetSource.name || `#${selectedSetSource.id}`}
+                </span>
+              )}
+              {selectedSetSource?.sourceImageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setLightboxSrc(selectedSetSource.sourceImageUrl)}
+                  className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs font-bold text-stone-600 hover:border-red-700 hover:text-red-800"
+                >
+                  預覽原圖
+                </button>
+              )}
               {data && (
                 <>
                   <span className="text-sm text-stone-500">共 {data.total} 筆</span>
-                  <span className="text-sm text-zinc-600">/</span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {visibleChars.map(({ char }) => {
-                      const count = data.results[char]?.length ?? 0;
-                      return (
-                        <span
-                          key={`result-summary-${char}`}
-                          className="rounded-lg bg-stone-50 px-2 py-1 text-sm text-stone-600"
-                        >
-                          {char} {count} 筆
-                        </span>
-                      );
-                    })}
-                  </div>
+                  {!isSetResultMode && (
+                    <>
+                      <span className="text-sm text-zinc-600">/</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {visibleChars.map(({ char }) => {
+                          const count = data.results[char]?.length ?? 0;
+                          return (
+                            <span
+                              key={`result-summary-${char}`}
+                              className="rounded-lg bg-stone-50 px-2 py-1 text-sm text-stone-600"
+                            >
+                              {char} {count} 筆
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -1129,7 +1501,75 @@ export default function FrontStagePage() {
               </div>
             )}
 
-            {data && visibleChars.map(({ char, index }) => {
+            {data && isSetResultMode && (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4">
+                {selectedSetResultGlyphs.map((glyph, index) => {
+                  const selectedAtPosition = selected.some((item) => item.position === index && item.id === glyph.id);
+                  const selectedElsewhere = !selectedAtPosition && selected.some((item) => item.id === glyph.id);
+                  return (
+                    <div
+                      key={`${glyph.id}-${index}`}
+                      className={`relative rounded-2xl border p-2 text-left hover:border-red-700 sm:p-3 ${
+                        selectedAtPosition
+                          ? "border-red-700 bg-red-50 shadow-[0_0_0_3px_rgba(185,28,28,0.12)]"
+                          : selectedElsewhere
+                          ? "border-amber-300 bg-amber-50"
+                          : "border-stone-200 bg-stone-50"
+                      }`}
+                    >
+                      {(selectedAtPosition || selectedElsewhere) && (
+                        <div className={`absolute right-2 top-2 z-10 rounded-full px-2 py-1 text-xs font-bold ${
+                          selectedAtPosition ? "bg-red-800 text-white" : "bg-amber-600 text-white"
+                        }`}>
+                          {selectedAtPosition ? "已選" : "已在集字"}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => pickGlyph(glyph, index)}
+                        className="block w-full text-left"
+                      >
+                        <GlyphImage glyph={glyph} size={110} containerClassName="h-[96px] w-full sm:h-[110px] sm:w-full" />
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <span className="font-serif text-lg font-bold text-stone-900">{glyph.char}</span>
+                          <span className="text-sm font-medium text-stone-700">{glyph.author || "佚名"}</span>
+                        </div>
+                        <div className="truncate text-xs text-stone-500">{glyph.scriptType || "未標註"}｜{glyph.workTitle || "未標題"}</div>
+                      </button>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-stone-500">
+                        <GlyphLikeButton
+                          glyphId={glyph.id}
+                          initialLiked={Boolean(glyph.likedByMe)}
+                          initialLikeCount={glyph.likeCount ?? 0}
+                          initialCollectionCount={glyph.collectionCount ?? 0}
+                          isAuthenticated={Boolean(user)}
+                          returnTo="/"
+                          className="w-full"
+                          onChange={(stats) => updateGlyphLike(glyph.id, stats)}
+                        />
+                        <div className="inline-flex items-center justify-center rounded-xl border border-stone-200 bg-white px-2 py-2 font-bold text-stone-600">
+                          集字 {glyph.collectionCount ?? 0}
+                        </div>
+                      </div>
+                      <Link
+                        href={`/practice/${glyph.id}`}
+                        className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-stone-900"
+                      >
+                        練習
+                      </Link>
+                      <Link
+                        href={`/glyph/${glyph.id}`}
+                        className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-600 hover:border-red-700 hover:text-red-800"
+                      >
+                        字圖詳情
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {data && !isSetResultMode && visibleChars.map(({ char, index }) => {
               const glyphs = data.results[char] ?? [];
               return (
                 <div key={`${char}-${index}`} className="mb-6 last:mb-0">
@@ -1359,6 +1799,24 @@ export default function FrontStagePage() {
               </div>
             )}
 
+            {selectedSetSource && (
+              <div className="mt-3 rounded-2xl border border-red-100 bg-white p-3 text-sm">
+                <div className="text-xs font-bold text-stone-400">集字來源</div>
+                <div className="mt-1 truncate font-serif font-bold text-stone-900">
+                  {selectedSetSource.name || `字組 #${selectedSetSource.id}`}
+                </div>
+                {selectedSetSource.sourceImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setLightboxSrc(selectedSetSource.sourceImageUrl)}
+                    className="mt-2 inline-flex w-full items-center justify-center rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-red-800"
+                  >
+                    預覽來源原圖
+                  </button>
+                )}
+              </div>
+            )}
+
             {message && (
               saveResult ? (
                 <div
@@ -1388,17 +1846,34 @@ export default function FrontStagePage() {
                         <p className="mt-0.5 text-xs opacity-80">{saveResult.description}</p>
                       </div>
                     </div>
-                    <Link
-                      href={saveResult.url}
-                      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-white ${
-                        saveResult.type === "duplicate"
-                          ? "bg-amber-700 hover:bg-amber-800"
-                          : "bg-emerald-700 hover:bg-emerald-800"
-                      }`}
-                    >
-                      查看作品
-                      <ExternalLink className="h-4 w-4" />
-                    </Link>
+                    {saveResult.type === "duplicate" && duplicateConflict ? (
+                      <div className="grid gap-2">
+                        <button
+                          type="button"
+                          onClick={overwriteDuplicateCollection}
+                          disabled={isSavingCollection}
+                          className="inline-flex w-full items-center justify-center rounded-xl bg-amber-700 px-3 py-2 text-sm font-bold text-white hover:bg-amber-800 disabled:opacity-50"
+                        >
+                          {isSavingCollection ? "更新中..." : "更新集字作品"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelDuplicateCollection}
+                          disabled={isSavingCollection}
+                          className="inline-flex w-full items-center justify-center rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                        >
+                          取消集字
+                        </button>
+                      </div>
+                    ) : (
+                      <Link
+                        href={saveResult.url}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-800"
+                      >
+                        查看作品
+                        <ExternalLink className="h-4 w-4" />
+                      </Link>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1410,6 +1885,7 @@ export default function FrontStagePage() {
           </div>
         </aside>
       </div>
+      {lightboxSrc && <ImageLightbox src={lightboxSrc} alt="拆字原圖" onClose={() => setLightboxSrc(null)} />}
     </main>
   );
 }

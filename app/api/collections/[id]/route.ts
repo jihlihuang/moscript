@@ -11,6 +11,8 @@ type CollectionRow = {
   text: string;
   display_direction: string | null;
   visibility: string | null;
+  source_set_id: number | null;
+  source_set_name: string | null;
   created_at: string;
 };
 
@@ -43,7 +45,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   const db = await getDb();
 
   const collection = db.prepare(`
-    SELECT id, user_id, title, text, display_direction, visibility, created_at
+    SELECT id, user_id, title, text, display_direction, visibility, source_set_id, source_set_name, created_at
     FROM collections
     WHERE id = ?
   `).get(id) as CollectionRow | undefined;
@@ -125,6 +127,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const title = typeof body.title === "string" ? truncate(body.title.trim(), MAX_COLLECTION_TITLE_LEN) : null;
   const text = typeof body.text === "string" ? truncate(body.text.trim(), MAX_COLLECTION_TEXT_LEN) : null;
   const visibility = body.visibility === "private" ? "private" : body.visibility === "public" ? "public" : null;
+  const sourceSetId = Number(body.sourceSetId);
+  const normalizedSourceSetId = Number.isInteger(sourceSetId) && sourceSetId > 0 ? sourceSetId : null;
 
   if (displayDirection !== undefined && displayDirection !== "horizontal" && displayDirection !== "vertical") {
     return NextResponse.json({ error: "排列設定不正確" }, { status: 400 });
@@ -155,6 +159,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (visibility === "public" || visibility === "private") {
       updates.push("visibility = ?");
       values.push(visibility);
+    }
+    if (body.sourceSetId !== undefined) {
+      const sourceSet = normalizedSourceSetId
+        ? db.prepare("SELECT id, name FROM glyph_sets WHERE id = ?").get(normalizedSourceSetId) as { id: number; name: string | null } | undefined
+        : undefined;
+      updates.push("source_set_id = ?", "source_set_name = ?");
+      values.push(sourceSet?.id ?? null, sourceSet?.name ?? null);
     }
 
     if (updates.length > 0) {

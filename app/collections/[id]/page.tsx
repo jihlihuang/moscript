@@ -9,6 +9,7 @@ import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { ToggleCollectionVisibilityButton } from "@/components/ToggleCollectionVisibilityButton";
 import { LogoMark } from "@/components/LogoMark";
 import { CollectionGlyphDisplay } from "@/components/CollectionGlyphDisplay";
+import { SourceImagePreview } from "@/components/SourceImagePreview";
 import { glyphImageUrlForAccess } from "@/lib/glyph-access";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 import { headers } from "next/headers";
@@ -24,6 +25,8 @@ type Collection = {
   text: string;
   display_direction: "horizontal" | "vertical" | null;
   visibility: "public" | "private" | null;
+  source_set_id: number | null;
+  source_set_name: string | null;
   created_at: string;
 };
 
@@ -81,7 +84,7 @@ export default async function CollectionPage({ params }: Params) {
   const db = await getDb();
 
   const collection = db.prepare(`
-    SELECT id, user_id, title, text, display_direction, visibility, created_at
+    SELECT id, user_id, title, text, display_direction, visibility, source_set_id, source_set_name, created_at
     FROM collections
     WHERE id = ?
   `).get(id) as Collection | undefined;
@@ -130,6 +133,13 @@ export default async function CollectionPage({ params }: Params) {
       thumbnail_url: item.thumbnail_url,
     }, "thumbnail"),
   }));
+
+  const sourceSet = collection.source_set_id
+    ? db.prepare("SELECT id, name, source_image_url FROM glyph_sets WHERE id = ?").get(collection.source_set_id) as
+      | { id: number; name: string | null; source_image_url: string | null }
+      | undefined
+    : undefined;
+  const sourceImageUrl = sourceSet?.source_image_url ? `/api/glyph-sets/${sourceSet.id}/source` : null;
 
   const headersList = await headers();
   const host = headersList.get("host") || "";
@@ -181,6 +191,21 @@ export default async function CollectionPage({ params }: Params) {
             isAuthenticated={Boolean(user)}
             likeReturnTo={`/collections/${collection.id}`}
           />
+
+          {(collection.source_set_id || collection.source_set_name) && (
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+              <div>
+                <div className="text-xs font-bold text-stone-400">集字來源</div>
+                <div className="mt-1 font-serif text-lg font-bold text-stone-900">
+                  {collection.source_set_name || sourceSet?.name || `字組 #${collection.source_set_id}`}
+                </div>
+                {collection.source_set_id && <div className="text-xs text-stone-500">字組 #{collection.source_set_id}</div>}
+              </div>
+              {sourceImageUrl && (
+                <SourceImagePreview src={sourceImageUrl} char={collection.text.slice(0, 1)} setId={sourceSet?.id ?? collection.source_set_id ?? 0} />
+              )}
+            </div>
+          )}
 
           <div className="mt-4 grid gap-2 sm:mt-6 sm:gap-3 md:grid-cols-2 lg:grid-cols-3">
             {securedItems.map((item) => (
