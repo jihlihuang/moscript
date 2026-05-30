@@ -490,26 +490,25 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-white">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:pt-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <LogoMark imageClassName="h-9 w-9 sm:h-12 sm:w-12" />
-              <div className="min-w-0">
-                <h1 className="truncate font-serif text-xl font-bold sm:text-2xl">後台管理</h1>
-                <p className="truncate text-xs text-stone-500 sm:text-sm">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-3 pt-3 sm:px-4 sm:pt-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <LogoMark imageClassName="h-9 w-9 sm:h-12 sm:w-12" />
+            <div className="min-w-0">
+              <h1 className="truncate font-serif text-xl font-bold sm:text-2xl">後台管理</h1>
+              <p className="hidden truncate text-xs text-stone-500 sm:block sm:text-sm">
                 管理字圖資料、手動上傳、檢查資料庫數量{user ? `｜${user.email}` : ""}
-                </p>
-              </div>
+              </p>
             </div>
           </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-            <LogoutButton
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-xs font-bold text-stone-700 hover:border-red-700 hover:text-stone-900 sm:px-4 sm:text-sm"
-            />
+          <div className="flex shrink-0 items-center gap-2 pl-3">
             <Link href="/" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-stone-800 px-3 py-2 text-xs font-bold text-white sm:px-4 sm:text-sm">
               <ArrowLeft className="h-4 w-4" />
               回前台
             </Link>
+            <LogoutButton
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-stone-300 px-2.5 py-2 text-stone-700 hover:border-red-700 hover:text-stone-900"
+              labelClassName="hidden"
+            />
           </div>
         </div>
         <div className="mx-auto mt-2 max-w-[1600px] px-3 sm:px-4">
@@ -676,7 +675,15 @@ export default function AdminPage() {
             >
               <input
                 value={setsListQuery}
-                onChange={(e) => setSetsListQuery(e.target.value)}
+                onCompositionEnd={(e) => setSetsListQuery(onlyChinese(e.currentTarget.value))}
+                onChange={(e) => {
+                  const nativeEvent = e.nativeEvent as InputEvent;
+                  if (nativeEvent.isComposing) {
+                    setSetsListQuery(e.target.value);
+                  } else {
+                    setSetsListQuery(onlyChinese(e.target.value));
+                  }
+                }}
                 placeholder="搜尋字組名稱、字圖、作者或作品"
                 className="flex-1 rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 outline-none focus:border-red-700"
               />
@@ -714,8 +721,7 @@ export default function AdminPage() {
               const authors = [...new Set(set.members.map((m) => m.author).filter(Boolean))];
               const scripts = [...new Set(set.members.map((m) => m.scriptType).filter(Boolean))];
               const works = [...new Set(set.members.map((m) => m.workTitle).filter(Boolean))];
-              const display = set.members.slice(0, 8);
-              const extra   = set.members.length - 8;
+              const display = set.members;
               return (
               <div key={set.id}
                 className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition-all"
@@ -767,11 +773,6 @@ export default function AdminPage() {
                           {m.scriptType && <span className="text-[9px] text-stone-400">{m.scriptType}</span>}
                         </a>
                       ))}
-                      {extra > 0 && (
-                        <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-stone-200 bg-stone-50 text-sm font-bold text-stone-400">
-                          +{extra}
-                        </div>
-                      )}
                     </div>
                   ) : (
                     <div className="py-4 text-center text-xs text-stone-400">此字組尚無字圖</div>

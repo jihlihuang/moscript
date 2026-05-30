@@ -799,6 +799,13 @@ function smoothFeatherBlend(dist: number, innerRadius: number, featherR: number)
   return 1 - fade * fade * (3 - 2 * fade); // smoothstep
 }
 
+// 確定性紙面材質雜湊，同一座標每次回傳相同值
+function paperTextureAt(x: number, y: number): number {
+  const hi = (Math.sin(x * 127.1 + y * 311.7) * 43758.5453) % 1;
+  const lo = Math.sin(x * 3.7 + y * 5.3) * 0.5 + Math.cos(x * 5.1 + y * 2.9) * 0.5;
+  return (hi - Math.floor(hi)) * 2 - 1 + lo * 0.4; // 高頻 + 低頻起伏
+}
+
 function featheredWhiteFillAt(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number) {
   const cw = ctx.canvas.width, ch = ctx.canvas.height;
   const innerRadius = radius * (1 - FEATHER_RATIO);
@@ -864,21 +871,22 @@ function contentAwareFillAt(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
     }
   }
 
-  // Step 2: 優先使用非純白像素中最淡的前 30%；全為純白時才用純白
-  // 純白閾值：亮度 > 252（三通道均接近 255）視為純白或已擦除的人工像素，先排除
+  // Step 2: 去掉空白像素，取非空白中亮度第 80 百分位的像素作為填充色；
+  // 全為空白時直接用純白填充
   const NEAR_WHITE = 252;
-  let bgR = 255, bgG = 255, bgB = 255; // 預設純白（全為純白時的後備）
+  let bgR = 255, bgG = 255, bgB = 255;
   if (ringPixels.length > 0) {
     const nonWhite = ringPixels.filter((p) => p.lum <= NEAR_WHITE);
-    const pool = nonWhite.length > 0 ? nonWhite : ringPixels; // 若無非純白，退回全部
-    pool.sort((a, b) => b.lum - a.lum);
-    const topN = Math.max(1, Math.ceil(pool.length * 0.3));
-    let sR = 0, sG = 0, sB = 0;
-    for (let i = 0; i < topN; i++) { sR += pool[i].r; sG += pool[i].g; sB += pool[i].b; }
-    bgR = sR / topN; bgG = sG / topN; bgB = sB / topN;
+    if (nonWhite.length > 0) {
+      nonWhite.sort((a, b) => a.lum - b.lum); // 從暗到亮排列
+      const p80 = nonWhite[Math.min(nonWhite.length - 1, Math.floor(nonWhite.length * 0.8))];
+      bgR = p80.r; bgG = p80.g; bgB = p80.b;
+    }
+    // nonWhite.length === 0 → 全空白，維持預設純白
   }
 
-  // Step 3: 用統一背景色填充圓形範圍，套用羽化
+  // Step 3: 用背景色＋紙面材質填充圓形範圍，套用羽化
+  const TEXTURE_STRENGTH = 10;
   for (let iy = y0; iy < y1; iy++) {
     const dy = iy - cy;
     for (let ix = x0; ix < x1; ix++) {
@@ -886,9 +894,10 @@ function contentAwareFillAt(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
       if (dist > radius) continue;
       const blend = smoothFeatherBlend(dist, innerRadius, featherR);
       const pi = ((iy - y0) * w + (ix - x0)) * 4;
-      px[pi]     = Math.round(orig[pi]     * (1 - blend) + bgR * blend);
-      px[pi + 1] = Math.round(orig[pi + 1] * (1 - blend) + bgG * blend);
-      px[pi + 2] = Math.round(orig[pi + 2] * (1 - blend) + bgB * blend);
+      const noise = paperTextureAt(ix, iy) * TEXTURE_STRENGTH * blend;
+      px[pi]     = Math.min(255, Math.max(0, Math.round(orig[pi]     * (1 - blend) + bgR * blend + noise)));
+      px[pi + 1] = Math.min(255, Math.max(0, Math.round(orig[pi + 1] * (1 - blend) + bgG * blend + noise)));
+      px[pi + 2] = Math.min(255, Math.max(0, Math.round(orig[pi + 2] * (1 - blend) + bgB * blend + noise)));
       px[pi + 3] = 255;
     }
   }
@@ -1014,6 +1023,7 @@ type BatchGlyphItem = SplitGlyphImage & {
   status: "idle" | "uploading" | "done" | "error";
   message?: string;
   colorMode?: UploadColorMode;
+  hasManualEdit?: boolean;
 };
 
 function mergeCloseRuns(runs: { start: number; end: number }[], maxGap: number) {
@@ -1714,10 +1724,11 @@ export function AdminGlyphUploadForm({
     char: string;
     file: string;
     author: string;
+    scriptType: string;
     workTitle: string;
     source: string;
     license: string;
-  }>({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
+  }>({ char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" });
   const [successToast, setSuccessToast] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -2471,6 +2482,7 @@ export function AdminGlyphUploadForm({
             previewUrl: nextPreviewUrl,
             status: "idle",
             message: "已套用編輯",
+            hasManualEdit: true,
           };
         })
       );
@@ -2601,8 +2613,9 @@ export function AdminGlyphUploadForm({
   }
 
   async function uploadBatch() {
-    const nextErrors = { char: "", file: "", author: "", workTitle: "", source: "", license: "" };
+    const nextErrors = { char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" };
     if (!uploadAuthor.trim()) nextErrors.author = "請填寫作者（必填）";
+    if (!uploadScriptType || uploadScriptType === "未標註") nextErrors.scriptType = "請選擇書體（必填）";
     if (!uploadWorkTitle.trim()) nextErrors.workTitle = "請填寫作品名稱（必填）";
     if (!uploadSource.trim()) nextErrors.source = "請填寫來源（必填）";
     if (!uploadLicense.trim()) nextErrors.license = "請填寫授權類型（必填）";
@@ -2630,11 +2643,13 @@ export function AdminGlyphUploadForm({
 
     // 建立字組並上傳原圖
     let batchSetId: number | null = null;
-    if (batchSourceFileRef.current && uploadEndpoint === "/api/glyphs/upload") {
+    const batchSetName = batchItems.map((item) => onlyChinese(item.char).slice(0, 1)).filter(Boolean).join("");
+    if (batchSourceFileRef.current && !replaceGlyph) {
       try {
         const setFormData = new FormData();
         setFormData.set("sourceImage", batchSourceFileRef.current, batchFileName || "source.jpg");
         setFormData.set("visibility", uploadVisibility);
+        if (batchSetName) setFormData.set("name", batchSetName);
         const setRes = await fetch("/api/glyph-sets", { method: "POST", body: setFormData });
         if (setRes.ok) {
           const setJson = await setRes.json() as { id: number };
@@ -2657,7 +2672,7 @@ export function AdminGlyphUploadForm({
 
     let successCount = 0;
     try {
-      for (const item of batchItems) {
+      for (const [batchIndex, item] of batchItems.entries()) {
         setBatchItems((items) =>
           items.map((candidate) =>
             candidate.id === item.id ? { ...candidate, status: "uploading", message: "上傳中" } : candidate
@@ -2665,7 +2680,7 @@ export function AdminGlyphUploadForm({
         );
         const effectiveColorMode = item.colorMode ?? batchColorMode;
         let fileToUpload = item.file;
-        if (effectiveColorMode !== "bw" && originalImageAnalysis) {
+        if (effectiveColorMode !== "bw" && !item.hasManualEdit && originalImageAnalysis) {
           const { imageData, width, height } = originalImageAnalysis;
           const effectiveBounds = adjustImageBounds(item.bounds, width, height, item.cropAdjustment);
           try {
@@ -2682,7 +2697,10 @@ export function AdminGlyphUploadForm({
         formData.set("qualityScore", uploadQualityScore);
         formData.set("visibility", uploadVisibility);
         formData.set("processingMs", String(uploadProcessingMs));
-        if (batchSetId) formData.set("setId", String(batchSetId));
+        if (batchSetId) {
+          formData.set("setId", String(batchSetId));
+          formData.set("setPosition", String(batchIndex + 1));
+        }
         formData.set("file", fileToUpload, fileToUpload.name);
         const thumbnailFile = await imageFileToThumbnailPng(fileToUpload, `${fileNameWithoutExtension(fileToUpload.name)}_thumb.png`);
         formData.set("thumbnailFile", thumbnailFile, thumbnailFile.name);
@@ -2713,6 +2731,9 @@ export function AdminGlyphUploadForm({
         showSuccessToast(failureCount > 0 ? `已上傳 ${successCount} 筆，${failureCount} 筆未完成` : `已成功上傳 ${successCount} 筆`);
       }
       await onUploaded?.();
+      if (failureCount === 0 && successCount > 0) {
+        clearBatchItems();
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "批次上傳失敗");
     } finally {
@@ -2723,7 +2744,7 @@ export function AdminGlyphUploadForm({
   async function upload(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const canvas = uploadPreviewCanvasRef.current;
-    const nextErrors = { char: "", file: "", author: "", workTitle: "", source: "", license: "" };
+    const nextErrors = { char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" };
     if (!isReplacingGlyph && !onlyChinese(uploadChar).slice(0, 1)) {
       nextErrors.char = "請輸入一個中文字（必填）";
     }
@@ -2732,6 +2753,9 @@ export function AdminGlyphUploadForm({
     }
     if (!uploadAuthor.trim()) {
       nextErrors.author = "請填寫作者（必填）";
+    }
+    if (!uploadScriptType || uploadScriptType === "未標註") {
+      nextErrors.scriptType = "請選擇書體（必填）";
     }
     if (!uploadWorkTitle.trim()) {
       nextErrors.workTitle = "請填寫作品名稱（必填）";
@@ -2746,7 +2770,7 @@ export function AdminGlyphUploadForm({
       setFieldErrors(nextErrors);
       return;
     }
-    setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
+    setFieldErrors({ char: "", file: "", author: "", scriptType: "", workTitle: "", source: "", license: "" });
 
     setIsUploading(true);
     setMessage(replaceGlyph && !processedUploadFile ? "儲存中..." : "上傳中...");
@@ -3187,20 +3211,28 @@ export function AdminGlyphUploadForm({
         />
         {fieldErrors.author && <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.author}</p>}
       </div>
-      <select
-        name="scriptType"
-        value={uploadScriptType}
-        onChange={(e) => setUploadScriptType(e.target.value)}
-        disabled={isUploading || isBatchUploading}
-        className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
-      >
-        <option value="">書體（選填）</option>
-        {scriptOptions.map((scriptType) => (
-          <option key={scriptType} value={scriptType}>
-            {scriptType}
-          </option>
-        ))}
-      </select>
+      <div>
+        <select
+          name="scriptType"
+          value={uploadScriptType}
+          onChange={(e) => {
+            setUploadScriptType(e.target.value);
+            if (fieldErrors.scriptType && e.target.value && e.target.value !== "未標註") {
+              setFieldErrors((prev) => ({ ...prev, scriptType: "" }));
+            }
+          }}
+          disabled={isUploading || isBatchUploading}
+          className={`min-h-12 w-full rounded-xl border bg-stone-50 px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70 ${fieldErrors.scriptType ? "border-red-500" : "border-stone-300"}`}
+        >
+          <option value="">書體（必填）</option>
+          {scriptOptions.map((scriptType) => (
+            <option key={scriptType} value={scriptType}>
+              {scriptType}
+            </option>
+          ))}
+        </select>
+        {fieldErrors.scriptType && <p className="mt-1 text-xs font-medium text-red-600">{fieldErrors.scriptType}</p>}
+      </div>
       <div>
         <input
           name="workTitle"
@@ -3417,13 +3449,11 @@ export function AdminGlyphUploadForm({
               <div className="font-bold text-stone-900">圖片處理</div>
               <div className="text-xs text-stone-500">先選擇來源圖片、拆字方向與品質，再重拆檢查結果。</div>
             </div>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {[
                 ["auto", "自動"],
                 ["horizontal", "橫排"],
                 ["vertical", "直排"],
-                ["grid", "多行"],
-                ["ruled", "格線"],
                 ["manual", "手動匡選"],
               ].map(([value, label]) => (
                 <button

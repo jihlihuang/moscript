@@ -921,15 +921,16 @@ export default function FrontStagePage() {
                       onCompositionStart={() => setIsComposingSetsQuery(true)}
                       onCompositionEnd={(e) => {
                         setIsComposingSetsQuery(false);
-                        const nextQuery = e.currentTarget.value;
+                        const nextQuery = onlyChinese(e.currentTarget.value);
                         setSetsQuery(nextQuery);
                         scheduleSetSearch(nextQuery);
                       }}
                       onChange={(e) => {
                         const nativeEvent = e.nativeEvent as InputEvent;
-                        const nextQuery = e.target.value;
+                        const isComposing = isComposingSetsQuery || nativeEvent.isComposing;
+                        const nextQuery = isComposing ? e.target.value : onlyChinese(e.target.value);
                         setSetsQuery(nextQuery);
-                        if (!isComposingSetsQuery && !nativeEvent.isComposing) {
+                        if (!isComposing) {
                           scheduleSetSearch(nextQuery);
                         }
                       }}

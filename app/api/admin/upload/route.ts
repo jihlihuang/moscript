@@ -38,6 +38,10 @@ export async function POST(req: NextRequest) {
   const license = truncate(String(form.get("license") ?? "non-commercial-research").trim(), MAX_LICENSE_LEN);
   const qualityScore = Number(form.get("qualityScore") ?? 0);
   const processingMs = Number(form.get("processingMs") ?? 0);
+  const rawSetId = form.get("setId");
+  const setId = rawSetId ? Number(rawSetId) : null;
+  const rawSetPosition = form.get("setPosition");
+  const setPosition = rawSetPosition ? Number(rawSetPosition) : null;
 
   const storedImage = await storeGlyphImage({ file, char, author, scriptType, workTitle });
   if ("error" in storedImage) {
@@ -55,8 +59,8 @@ export async function POST(req: NextRequest) {
   const db = await getDb();
   const info = db.prepare(`
     INSERT INTO glyphs (
-      char, author, script_type, work_title, image_url, thumbnail_url, source, license, quality_score
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      char, author, script_type, work_title, image_url, thumbnail_url, source, license, quality_score, set_id, set_position
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     char,
     author || null,
@@ -66,7 +70,9 @@ export async function POST(req: NextRequest) {
     storedThumbnail && "imageUrl" in storedThumbnail ? storedThumbnail.imageUrl : null,
     source || "manual-upload",
     license || "non-commercial-research",
-    qualityScore
+    qualityScore,
+    (setId && Number.isFinite(setId)) ? setId : null,
+    (setPosition && Number.isFinite(setPosition)) ? setPosition : null
   );
   await syncDbToBlob();
   void logUsageEvent({
