@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, type GlyphRow, syncDbToBlob } from "@/lib/db";
-import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized } from "@/lib/auth";
+import { getDb, type GlyphRow, type GlyphSetRow, syncDbToBlob } from "@/lib/db";
+import { forbidden, isAdminAllowed, logAdminAction, requireRequestUser, unauthorized, getCurrentUser } from "@/lib/auth";
 import { canAccessGlyph } from "@/lib/glyph-access";
 import { toGlyphDto } from "@/lib/glyphs";
 import { deleteGlyphImageByUrl, onlyChinese } from "@/lib/glyph-upload";
@@ -25,7 +25,29 @@ export async function GET(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "找不到字圖" }, { status: 404 });
   }
 
-  return NextResponse.json(toGlyphDto(glyph));
+  const dto = toGlyphDto(glyph) as Record<string, unknown>;
+
+  // 若屬於字組，附加字組資訊與兄弟字
+  if (glyph.set_id) {
+    const set = db.prepare("SELECT * FROM glyph_sets WHERE id = ?").get(glyph.set_id) as GlyphSetRow | undefined;
+    const siblings = db.prepare(`
+      SELECT * FROM glyphs
+      WHERE set_id = ? AND id != ?
+        AND (visibility = 'public' OR owner_user_id = ?)
+      ORDER BY id ASC
+    `).all(glyph.set_id, glyph.id, user?.id ?? "") as GlyphRow[];
+
+    const isOwner = user && (user.id === set?.owner_user_id || isAdminAllowed(user));
+    dto.set = {
+      id: glyph.set_id,
+      sourceImageUrl: (isOwner && set?.source_image_url)
+        ? `/api/glyph-sets/${glyph.set_id}/source`
+        : null,
+      siblings: siblings.map(toGlyphDto),
+    };
+  }
+
+  return NextResponse.json(dto);
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {

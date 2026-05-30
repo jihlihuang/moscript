@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
   const qualityScore = 0;
   const processingMs = Number(form.get("processingMs") ?? 0);
   const visibility = form.get("visibility") === "private" ? "private" : "public";
+  const rawSetId = form.get("setId");
+  const setId = rawSetId ? Number(rawSetId) : null;
 
   const storedImage = await storeGlyphImage({ file, char, author, scriptType, workTitle, isPrivate: visibility === "private" });
   if ("error" in storedImage) {
@@ -71,8 +73,8 @@ export async function POST(req: NextRequest) {
   const info = db.prepare(`
     INSERT INTO glyphs (
       char, author, script_type, work_title, image_url, thumbnail_url, source, license, quality_score,
-      owner_user_id, owner_user_email, owner_user_name, visibility
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      owner_user_id, owner_user_email, owner_user_name, visibility, set_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     char,
     author || user.name || null,
@@ -86,7 +88,8 @@ export async function POST(req: NextRequest) {
     user.id,
     user.email,
     user.name,
-    visibility
+    visibility,
+    (setId && Number.isFinite(setId)) ? setId : null
   );
 
   await syncDbToBlob();

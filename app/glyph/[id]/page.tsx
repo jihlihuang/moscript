@@ -2,9 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, BookOpen, Library, PencilLine } from "lucide-react";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, isAdminAllowed } from "@/lib/auth";
 import { canAccessGlyph, glyphImageUrlForAccess } from "@/lib/glyph-access";
-import { getDb, type GlyphRow } from "@/lib/db";
+import { getDb, type GlyphRow, type GlyphSetRow } from "@/lib/db";
 import { glyphStatsJoinSql, glyphStatsSelectSql } from "@/lib/glyph-stats";
 import { GlyphLikeButton } from "@/components/GlyphLikeButton";
 import { LogoMark } from "@/components/LogoMark";
@@ -40,6 +40,28 @@ export default async function GlyphDetailPage({ params }: Params) {
   if (!glyph || !canAccessGlyph(glyph, user)) notFound();
 
   const imageUrl = glyphImageUrlForAccess(glyph, "image") ?? glyph.image_url;
+
+  // 字組資訊
+  type SetSibling = Pick<GlyphRow, "id" | "char" | "thumbnail_url" | "image_url" | "visibility" | "owner_user_id">;
+  let glyphSet: (GlyphSetRow & { sourceUrl: string | null; siblings: SetSibling[] }) | null = null;
+  if (glyph.set_id) {
+    const set = db.prepare("SELECT * FROM glyph_sets WHERE id = ?").get(glyph.set_id) as GlyphSetRow | undefined;
+    if (set) {
+      const siblings = db.prepare(`
+        SELECT id, char, thumbnail_url, image_url, visibility, owner_user_id
+        FROM glyphs WHERE set_id = ? AND id != ?
+          AND (visibility = 'public' OR owner_user_id = ?)
+        ORDER BY id ASC LIMIT 20
+      `).all(glyph.set_id, glyph.id, user?.id ?? "") as SetSibling[];
+      const isOwner = user && (user.id === set.owner_user_id || isAdminAllowed(user));
+      glyphSet = {
+        ...set,
+        sourceUrl: (isOwner && set.source_image_url) ? `/api/glyph-sets/${glyph.set_id}/source` : null,
+        siblings,
+      };
+    }
+  }
+
   const relatedCollections = db.prepare(`
     SELECT DISTINCT c.id, c.title, c.text, c.created_at
     FROM collections c
@@ -130,6 +152,38 @@ export default async function GlyphDetailPage({ params }: Params) {
               </div>
             </div>
           </div>
+
+          {glyphSet && (
+            <div className="rounded-3xl border border-stone-200 bg-white p-4">
+              <div className="mb-3 flex items-center gap-2 font-bold">
+                <Library className="h-4 w-4 text-red-700" />
+                同字組的字（{glyphSet.siblings.length + 1} 個字）
+              </div>
+              {glyphSet.sourceUrl && (
+                <a href={glyphSet.sourceUrl} target="_blank" rel="noopener noreferrer" className="mb-3 flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600 hover:border-red-700 hover:text-red-800">
+                  <Image src={glyphSet.sourceUrl} alt="字組原圖" width={48} height={48} className="h-12 w-12 rounded-lg object-contain bg-white" unoptimized />
+                  <span className="font-medium">查看原圖（ID {glyphSet.id}）</span>
+                </a>
+              )}
+              {glyphSet.siblings.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {glyphSet.siblings.map((s) => {
+                    const sUrl = (s.visibility === "private" || !s.image_url.startsWith("/glyphs/"))
+                      ? `/api/glyphs/${s.id}/asset?variant=thumbnail`
+                      : (s.thumbnail_url || s.image_url);
+                    return (
+                      <Link key={s.id} href={`/glyph/${s.id}`} className="flex flex-col items-center gap-1 rounded-xl border border-stone-200 bg-stone-50 p-2 text-center hover:border-red-700">
+                        <Image src={sUrl} alt={s.char} width={56} height={56} className="h-14 w-14 object-contain mix-blend-multiply" unoptimized />
+                        <span className="text-lg font-bold">{s.char}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-stone-500">此字組只有這個字。</p>
+              )}
+            </div>
+          )}
 
           <div className="rounded-3xl border border-stone-200 bg-white p-4">
             <div className="mb-3 flex items-center gap-2 font-bold">

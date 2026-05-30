@@ -25,9 +25,17 @@ export type GlyphRow = {
   owner_user_email: string | null;
   owner_user_name: string | null;
   visibility: string | null;
+  set_id: number | null;
   like_count?: number;
   collection_count?: number;
   liked_by_me?: number;
+  created_at: string;
+};
+
+export type GlyphSetRow = {
+  id: number;
+  source_image_url: string | null;
+  owner_user_id: string | null;
   created_at: string;
 };
 
@@ -187,6 +195,14 @@ export function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_security_events_severity ON security_events(severity);
     CREATE INDEX IF NOT EXISTS idx_security_events_ip ON security_events(ip);
     CREATE INDEX IF NOT EXISTS idx_security_events_created_at ON security_events(created_at);
+
+    CREATE TABLE IF NOT EXISTS glyph_sets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_image_url TEXT,
+      owner_user_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_glyph_sets_owner ON glyph_sets(owner_user_id);
   `);
 
   const collectionColumns = db.prepare("PRAGMA table_info(collections)").all() as { name: string }[];
@@ -225,6 +241,10 @@ export function initSchema(db: Database.Database) {
   }
   if (!glyphColumnNames.has("thumbnail_url")) {
     db.prepare("ALTER TABLE glyphs ADD COLUMN thumbnail_url TEXT").run();
+  }
+  if (!glyphColumnNames.has("set_id")) {
+    db.prepare("ALTER TABLE glyphs ADD COLUMN set_id INTEGER").run();
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_set_id ON glyphs(set_id)").run();
   }
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_owner_user_id ON glyphs(owner_user_id)").run();
   db.prepare("CREATE INDEX IF NOT EXISTS idx_glyphs_visibility ON glyphs(visibility)").run();

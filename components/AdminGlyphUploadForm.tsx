@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, PointerEvent, useEffect, useRef, useState } from "react";
-import { Check, Copy, Eraser, GripVertical, Maximize2, Minimize2, RefreshCw, RotateCcw, Scissors, Upload, X } from "lucide-react";
+import { Check, Copy, Eraser, GripVertical, Maximize2, Minimize2, Pencil, RefreshCw, RotateCcw, Scissors, Upload, X } from "lucide-react";
 
 const uploadPreviewSize = 320;
 const normalizedUploadImageSize = 1024;
@@ -660,6 +660,83 @@ export function imageToBlackWhitePng(file: File, options: UploadProcessOptions =
   });
 }
 
+export type UploadColorMode = "bw" | "grayscale" | "original";
+
+function imageToGrayscalePng(file: File) {
+  return new Promise<File>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const sourceWidth = Math.max(1, image.naturalWidth || image.width);
+      const sourceHeight = Math.max(1, image.naturalHeight || image.height);
+      const scale = Math.min(normalizedUploadImageSize / sourceWidth, normalizedUploadImageSize / sourceHeight);
+      const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
+      const drawX = Math.round((normalizedUploadImageSize - drawWidth) / 2);
+      const drawY = Math.round((normalizedUploadImageSize - drawHeight) / 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = normalizedUploadImageSize;
+      canvas.height = normalizedUploadImageSize;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) { reject(new Error("無法處理圖片")); return; }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, normalizedUploadImageSize, normalizedUploadImageSize);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+      const imageData = ctx.getImageData(0, 0, normalizedUploadImageSize, normalizedUploadImageSize);
+      const pixels = imageData.data;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const gray = Math.round(getLuminance(pixels[i], pixels[i + 1], pixels[i + 2]));
+        pixels[i] = gray;
+        pixels[i + 1] = gray;
+        pixels[i + 2] = gray;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error("無法產生灰階圖片")); return; }
+        resolve(new File([blob], `${fileNameWithoutExtension(file.name)}_gray.png`, { type: "image/png" }));
+      }, "image/png");
+    };
+    image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("無法讀取圖片，請換一張圖試試")); };
+    image.src = objectUrl;
+  });
+}
+
+function imageToNormalizedPng(file: File) {
+  return new Promise<File>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const sourceWidth = Math.max(1, image.naturalWidth || image.width);
+      const sourceHeight = Math.max(1, image.naturalHeight || image.height);
+      const scale = Math.min(normalizedUploadImageSize / sourceWidth, normalizedUploadImageSize / sourceHeight);
+      const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
+      const drawX = Math.round((normalizedUploadImageSize - drawWidth) / 2);
+      const drawY = Math.round((normalizedUploadImageSize - drawHeight) / 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = normalizedUploadImageSize;
+      canvas.height = normalizedUploadImageSize;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { reject(new Error("無法處理圖片")); return; }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, normalizedUploadImageSize, normalizedUploadImageSize);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error("無法產生圖片")); return; }
+        resolve(new File([blob], `${fileNameWithoutExtension(file.name)}_orig.png`, { type: "image/png" }));
+      }, "image/png");
+    };
+    image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("無法讀取圖片，請換一張圖試試")); };
+    image.src = objectUrl;
+  });
+}
+
 function canvasToPngFile(canvas: HTMLCanvasElement, fileName: string) {
   return new Promise<File>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -714,6 +791,110 @@ function imageFileToThumbnailPng(file: File, fileName: string) {
   });
 }
 
+const FEATHER_RATIO = 0.3; // 外圈 30% 半徑範圍做羽化過渡
+
+function smoothFeatherBlend(dist: number, innerRadius: number, featherR: number): number {
+  if (dist <= innerRadius) return 1;
+  const fade = Math.min(1, (dist - innerRadius) / featherR);
+  return 1 - fade * fade * (3 - 2 * fade); // smoothstep
+}
+
+function featheredWhiteFillAt(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number) {
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const innerRadius = radius * (1 - FEATHER_RATIO);
+  const featherR = radius - innerRadius;
+
+  const x0 = Math.max(0, Math.floor(cx - radius - 1));
+  const y0 = Math.max(0, Math.floor(cy - radius - 1));
+  const x1 = Math.min(cw, Math.ceil(cx + radius + 1));
+  const y1 = Math.min(ch, Math.ceil(cy + radius + 1));
+  const w = x1 - x0, h = y1 - y0;
+  if (w <= 0 || h <= 0) return;
+
+  const data = ctx.getImageData(x0, y0, w, h);
+  const px = data.data;
+  const orig = new Uint8ClampedArray(px);
+
+  for (let iy = y0; iy < y1; iy++) {
+    const dy = iy - cy;
+    for (let ix = x0; ix < x1; ix++) {
+      const dist = Math.hypot(ix - cx, dy);
+      if (dist > radius) continue;
+      const blend = smoothFeatherBlend(dist, innerRadius, featherR);
+      const pi = ((iy - y0) * w + (ix - x0)) * 4;
+      px[pi]     = Math.round(orig[pi]     * (1 - blend) + 255 * blend);
+      px[pi + 1] = Math.round(orig[pi + 1] * (1 - blend) + 255 * blend);
+      px[pi + 2] = Math.round(orig[pi + 2] * (1 - blend) + 255 * blend);
+      px[pi + 3] = 255;
+    }
+  }
+  ctx.putImageData(data, x0, y0);
+}
+
+function contentAwareFillAt(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number) {
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const ringWidth = Math.max(8, Math.round(radius * 0.6));
+  const innerRadius = radius * (1 - FEATHER_RATIO);
+  const featherR = radius - innerRadius;
+
+  const x0 = Math.max(0, Math.floor(cx - radius - ringWidth - 1));
+  const y0 = Math.max(0, Math.floor(cy - radius - ringWidth - 1));
+  const x1 = Math.min(cw, Math.ceil(cx + radius + ringWidth + 1));
+  const y1 = Math.min(ch, Math.ceil(cy + radius + ringWidth + 1));
+  const w = x1 - x0, h = y1 - y0;
+  if (w <= 0 || h <= 0) return;
+
+  const data = ctx.getImageData(x0, y0, w, h);
+  const px = data.data;
+  const orig = new Uint8ClampedArray(px);
+
+  // Step 1: 從圓形外環（360度）全方向取樣，收集亮度值
+  type Sample = { lum: number; r: number; g: number; b: number };
+  const ringPixels: Sample[] = [];
+  const angleStep = Math.max(0.05, 1 / (radius + ringWidth));
+  for (let angle = 0; angle < Math.PI * 2; angle += angleStep) {
+    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+    for (let r = radius + 1; r <= radius + ringWidth; r += 1) {
+      const sx = Math.round(cx + cosA * r);
+      const sy = Math.round(cy + sinA * r);
+      if (sx < x0 || sx >= x1 || sy < y0 || sy >= y1) continue;
+      const si = ((sy - y0) * w + (sx - x0)) * 4;
+      const rv = orig[si], gv = orig[si + 1], bv = orig[si + 2];
+      ringPixels.push({ lum: 0.299 * rv + 0.587 * gv + 0.114 * bv, r: rv, g: gv, b: bv });
+    }
+  }
+
+  // Step 2: 優先使用非純白像素中最淡的前 30%；全為純白時才用純白
+  // 純白閾值：亮度 > 252（三通道均接近 255）視為純白或已擦除的人工像素，先排除
+  const NEAR_WHITE = 252;
+  let bgR = 255, bgG = 255, bgB = 255; // 預設純白（全為純白時的後備）
+  if (ringPixels.length > 0) {
+    const nonWhite = ringPixels.filter((p) => p.lum <= NEAR_WHITE);
+    const pool = nonWhite.length > 0 ? nonWhite : ringPixels; // 若無非純白，退回全部
+    pool.sort((a, b) => b.lum - a.lum);
+    const topN = Math.max(1, Math.ceil(pool.length * 0.3));
+    let sR = 0, sG = 0, sB = 0;
+    for (let i = 0; i < topN; i++) { sR += pool[i].r; sG += pool[i].g; sB += pool[i].b; }
+    bgR = sR / topN; bgG = sG / topN; bgB = sB / topN;
+  }
+
+  // Step 3: 用統一背景色填充圓形範圍，套用羽化
+  for (let iy = y0; iy < y1; iy++) {
+    const dy = iy - cy;
+    for (let ix = x0; ix < x1; ix++) {
+      const dist = Math.hypot(ix - cx, dy);
+      if (dist > radius) continue;
+      const blend = smoothFeatherBlend(dist, innerRadius, featherR);
+      const pi = ((iy - y0) * w + (ix - x0)) * 4;
+      px[pi]     = Math.round(orig[pi]     * (1 - blend) + bgR * blend);
+      px[pi + 1] = Math.round(orig[pi + 1] * (1 - blend) + bgG * blend);
+      px[pi + 2] = Math.round(orig[pi + 2] * (1 - blend) + bgB * blend);
+      px[pi + 3] = 255;
+    }
+  }
+  ctx.putImageData(data, x0, y0);
+}
+
 function canvasToCenteredGlyphFile(canvas: HTMLCanvasElement, fileName: string) {
   return new Promise<File>((resolve, reject) => {
     const sourceCanvas = document.createElement("canvas");
@@ -758,7 +939,67 @@ function canvasToCenteredGlyphFile(canvas: HTMLCanvasElement, fileName: string) 
   });
 }
 
-type BatchSplitDirection = "auto" | "horizontal" | "vertical" | "grid" | "ruled";
+function canvasToCenteredColorFile(canvas: HTMLCanvasElement, fileName: string, colorMode: "grayscale" | "original") {
+  return new Promise<File>((resolve, reject) => {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) { reject(new Error("無法處理圖片")); return; }
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    let minX = canvas.width, minY = canvas.height, maxX = -1, maxY = -1;
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4;
+        if (pixels[i] < 250 || pixels[i + 1] < 250 || pixels[i + 2] < 250) {
+          minX = Math.min(minX, x); minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) { reject(new Error("圖片中沒有可保留的內容")); return; }
+
+    const pad = Math.max(12, Math.round(Math.max(maxX - minX, maxY - minY) * trimmedInkPaddingRatio));
+    const srcX = Math.max(0, minX - pad);
+    const srcY = Math.max(0, minY - pad);
+    const srcW = Math.min(canvas.width, maxX + pad + 1) - srcX;
+    const srcH = Math.min(canvas.height, maxY + pad + 1) - srcY;
+
+    const size = normalizedUploadImageSize;
+    const scale = Math.min(size / srcW, size / srcH) * (1 - trimmedInkPaddingRatio * 2);
+    const drawW = Math.max(1, Math.round(srcW * scale));
+    const drawH = Math.max(1, Math.round(srcH * scale));
+    const drawX = Math.round((size - drawW) / 2);
+    const drawY = Math.round((size - drawH) / 2);
+
+    const out = document.createElement("canvas");
+    out.width = size; out.height = size;
+    const outCtx = out.getContext("2d", { willReadFrequently: colorMode === "grayscale" });
+    if (!outCtx) { reject(new Error("無法處理圖片")); return; }
+    outCtx.fillStyle = "#ffffff";
+    outCtx.fillRect(0, 0, size, size);
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = "high";
+    outCtx.drawImage(canvas, srcX, srcY, srcW, srcH, drawX, drawY, drawW, drawH);
+
+    if (colorMode === "grayscale") {
+      const d = outCtx.getImageData(0, 0, size, size);
+      for (let i = 0; i < d.data.length; i += 4) {
+        const gray = Math.round(getLuminance(d.data[i], d.data[i + 1], d.data[i + 2]));
+        d.data[i] = gray; d.data[i + 1] = gray; d.data[i + 2] = gray;
+      }
+      outCtx.putImageData(d, 0, 0);
+    }
+
+    const suffix = colorMode === "grayscale" ? "_gray" : "_orig";
+    const base = fileNameWithoutExtension(fileName).replace(/_(bw|gray|orig)$/, "");
+    out.toBlob((blob) => {
+      if (!blob) { reject(new Error("無法產生圖片")); return; }
+      resolve(new File([blob], `${base}${suffix}.png`, { type: "image/png" }));
+    }, "image/png");
+  });
+}
+
+type BatchSplitDirection = "auto" | "horizontal" | "vertical" | "grid" | "ruled" | "manual";
 
 type SplitGlyphImage = {
   file: File;
@@ -772,6 +1013,7 @@ type BatchGlyphItem = SplitGlyphImage & {
   cropAdjustment: number;
   status: "idle" | "uploading" | "done" | "error";
   message?: string;
+  colorMode?: UploadColorMode;
 };
 
 function mergeCloseRuns(runs: { start: number; end: number }[], maxGap: number) {
@@ -1244,6 +1486,61 @@ function fileFromInkBounds(
   });
 }
 
+function fileFromImageDataBounds(
+  imageData: ImageData,
+  analysisWidth: number,
+  analysisHeight: number,
+  bounds: ImageBounds,
+  fileName: string,
+  colorMode: "grayscale" | "original"
+): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const size = normalizedUploadImageSize;
+    const scale = Math.min(size / Math.max(1, bounds.width), size / Math.max(1, bounds.height));
+    const drawWidth = Math.max(1, Math.round(bounds.width * scale));
+    const drawHeight = Math.max(1, Math.round(bounds.height * scale));
+    const drawX = Math.round((size - drawWidth) / 2);
+    const drawY = Math.round((size - drawHeight) / 2);
+
+    const srcCanvas = document.createElement("canvas");
+    srcCanvas.width = analysisWidth;
+    srcCanvas.height = analysisHeight;
+    const srcCtx = srcCanvas.getContext("2d");
+    if (!srcCtx) { reject(new Error("無法處理圖片")); return; }
+    srcCtx.putImageData(imageData, 0, 0);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d", { willReadFrequently: colorMode === "grayscale" });
+    if (!ctx) { reject(new Error("無法處理圖片")); return; }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(srcCanvas, bounds.x, bounds.y, bounds.width, bounds.height, drawX, drawY, drawWidth, drawHeight);
+
+    if (colorMode === "grayscale") {
+      const data = ctx.getImageData(0, 0, size, size);
+      const pixels = data.data;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const gray = Math.round(getLuminance(pixels[i], pixels[i + 1], pixels[i + 2]));
+        pixels[i] = gray;
+        pixels[i + 1] = gray;
+        pixels[i + 2] = gray;
+      }
+      ctx.putImageData(data, 0, 0);
+    }
+
+    const suffix = colorMode === "grayscale" ? "_gray" : "_orig";
+    const baseName = fileNameWithoutExtension(fileName).replace(/_bw$/, "");
+    canvas.toBlob((blob) => {
+      if (!blob) { reject(new Error("無法產生圖片")); return; }
+      resolve(new File([blob], `${baseName}${suffix}.png`, { type: "image/png" }));
+    }, "image/png");
+  });
+}
+
 async function buildBatchInkLayerFromFile(
   file: File,
   direction: BatchSplitDirection,
@@ -1288,7 +1585,7 @@ async function buildBatchInkLayerFromFile(
 }
 
 function adjustImageBounds(bounds: ImageBounds, width: number, height: number, adjustment: number) {
-  const scale = Math.max(0.72, Math.min(1.48, 1 + adjustment * 0.08));
+  const scale = Math.max(0.05, 1 + adjustment * 0.08);
   const centerX = bounds.x + bounds.width / 2;
   const centerY = bounds.y + bounds.height / 2;
   const nextWidth = Math.max(1, Math.round(bounds.width * scale));
@@ -1334,7 +1631,7 @@ async function splitImageToGlyphFiles(
         : getCenterValleyBounds(inkLayer, width, height, refinedBounds, direction);
     if (boundsList.length === 0) throw new Error("沒有偵測到可拆出的字");
 
-    return Promise.all(
+    const images = await Promise.all(
       boundsList.map(async (bounds, index) => {
         const glyphFile = await fileFromInkBounds(
           inkLayer,
@@ -1351,6 +1648,7 @@ async function splitImageToGlyphFiles(
         };
       })
     );
+    return { images, imageData, analysisWidth: width, analysisHeight: height };
 }
 
 export type ReplaceGlyphTarget = {
@@ -1387,8 +1685,11 @@ export function AdminGlyphUploadForm({
   const uploadPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const uploadEditCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const batchEditCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const uploadEraserCursorRef = useRef<HTMLDivElement | null>(null);
+  const batchEraserCursorRef = useRef<HTMLDivElement | null>(null);
   const batchItemsRef = useRef<BatchGlyphItem[]>([]);
   const batchCharInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const batchOriginalAnalysisRef = useRef<{ imageData: ImageData; width: number; height: number } | null>(null);
   const isErasingUploadPreviewRef = useRef(false);
   const isErasingBatchEditRef = useRef(false);
   const successToastTimerRef = useRef<number | null>(null);
@@ -1397,6 +1698,7 @@ export function AdminGlyphUploadForm({
   const uploadProcessRequestRef = useRef(0);
   const isReplacingGlyph = Boolean(replaceGlyph);
   const [uploadMode, setUploadMode] = useState<"single" | "batch">("single");
+  const [uploadColorMode, setUploadColorMode] = useState<UploadColorMode>("bw");
   const [uploadChar, setUploadChar] = useState("");
   const [uploadAuthor, setUploadAuthor] = useState("");
   const [uploadScriptType, setUploadScriptType] = useState("");
@@ -1437,6 +1739,24 @@ export function AdminGlyphUploadForm({
   const [isUploadEditApplying, setIsUploadEditApplying] = useState(false);
   const [uploadPreviewDimensions, setUploadPreviewDimensions] = useState<{ width: number; height: number } | null>(null);
   const [batchDirection, setBatchDirection] = useState<BatchSplitDirection>("auto");
+  const [manualSelections, setManualSelections] = useState<{ id: string; x: number; y: number; w: number; h: number }[]>([]);
+  const [manualImgDimensions, setManualImgDimensions] = useState<{ w: number; h: number } | null>(null);
+  const manualSelectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const manualSourceImageRef = useRef<HTMLImageElement | null>(null);
+  const manualDrawRef = useRef<{ startX: number; startY: number; curX: number; curY: number } | null>(null);
+  const isManualDrawingRef = useRef(false);
+  type ManualHandle = "NW" | "N" | "NE" | "E" | "SE" | "S" | "SW" | "W";
+  const manualResizeRef = useRef<{
+    id: string; handle: ManualHandle;
+    orig: { x: number; y: number; w: number; h: number };
+    startX: number; startY: number;
+  } | null>(null);
+  const manualMoveRef = useRef<{
+    id: string;
+    origX: number; origY: number;
+    startX: number; startY: number;
+  } | null>(null);
+  const manualSelectionsRef = useRef<{ id: string; x: number; y: number; w: number; h: number }[]>([]);
   const [batchExpectedCount, setBatchExpectedCount] = useState("");
   const [batchItems, setBatchItems] = useState<BatchGlyphItem[]>([]);
   const [batchFileName, setBatchFileName] = useState("");
@@ -1448,10 +1768,39 @@ export function AdminGlyphUploadForm({
   const [dragOverBatchSide, setDragOverBatchSide] = useState<"before" | "after">("before");
   const [composingBatchCharIds, setComposingBatchCharIds] = useState<Set<string>>(() => new Set());
   const [batchMissingCharIds, setBatchMissingCharIds] = useState<Set<string>>(() => new Set());
+  const [batchColorMode, setBatchColorMode] = useState<UploadColorMode>("bw");
+  const [isManualOverlayOpen, setIsManualOverlayOpen] = useState(false);
+
+  async function changeBatchColorMode(mode: UploadColorMode) {
+    setBatchColorMode(mode);
+    const analysis = batchOriginalAnalysisRef.current;
+    const items = batchItemsRef.current.filter((item) => !item.colorMode);
+    if (!analysis || items.length === 0) return;
+
+    const updatedPreviews = new Map<string, string>();
+    for (const item of items) {
+      let newPreviewUrl: string;
+      if (mode === "bw") {
+        newPreviewUrl = URL.createObjectURL(item.file);
+      } else {
+        const effectiveBounds = adjustImageBounds(item.bounds, analysis.width, analysis.height, item.cropAdjustment);
+        const previewFile = await fileFromImageDataBounds(analysis.imageData, analysis.width, analysis.height, effectiveBounds, item.file.name, mode);
+        newPreviewUrl = URL.createObjectURL(previewFile);
+      }
+      updatedPreviews.set(item.id, newPreviewUrl);
+    }
+    setBatchItems((currentItems) => currentItems.map((item) => {
+      const newUrl = updatedPreviews.get(item.id);
+      if (!newUrl) return item;
+      if (newUrl !== item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return { ...item, previewUrl: newUrl };
+    }));
+  }
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [isBatchUploading, setIsBatchUploading] = useState(false);
   const [batchEditingId, setBatchEditingId] = useState<string | null>(null);
   const [batchEditEraserSize, setBatchEditEraserSize] = useState(44);
+  const [batchEditColorMode, setBatchEditColorMode] = useState<UploadColorMode>("bw");
   const [isErasingBatchEdit, setIsErasingBatchEdit] = useState(false);
   const [batchEditUndoCount, setBatchEditUndoCount] = useState(0);
   const [isBatchEditApplying, setIsBatchEditApplying] = useState(false);
@@ -1477,20 +1826,26 @@ export function AdminGlyphUploadForm({
     isErasingUploadPreviewRef.current = false;
     uploadUndoStackRef.current = [];
     setUploadUndoCount(0);
+    setUploadColorMode("bw");
     setFieldErrors({ char: "", file: "", author: "", workTitle: "", source: "", license: "" });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }
 
-  async function processUploadImage(file: File, options: UploadProcessOptions) {
+  async function processUploadImage(file: File, options: UploadProcessOptions, colorMode: UploadColorMode = "bw") {
     const requestId = uploadProcessRequestRef.current + 1;
     uploadProcessRequestRef.current = requestId;
     setIsProcessingUploadImage(true);
-    setMessage("正在轉成黑白預覽...");
+    const modeLabel = colorMode === "bw" ? "黑白" : colorMode === "grayscale" ? "灰階" : "原圖";
+    setMessage(`正在轉成${modeLabel}預覽...`);
     const startedAt = performance.now();
     try {
-      const nextFile = await imageToBlackWhitePng(file, options);
+      const nextFile = colorMode === "bw"
+        ? await imageToBlackWhitePng(file, options)
+        : colorMode === "grayscale"
+        ? await imageToGrayscalePng(file)
+        : await imageToNormalizedPng(file);
       if (requestId !== uploadProcessRequestRef.current) return;
       const nextPreviewUrl = URL.createObjectURL(nextFile);
       setProcessedUploadFile(nextFile);
@@ -1521,6 +1876,16 @@ export function AdminGlyphUploadForm({
     }
     setBatchItems([]);
     setBatchMissingCharIds(new Set());
+    setBatchColorMode("bw");
+    batchOriginalAnalysisRef.current = null;
+    manualSelectionsRef.current = [];
+    setManualSelections([]);
+    manualSourceImageRef.current = null;
+    setManualImgDimensions(null);
+    setIsManualOverlayOpen(false);
+    manualDrawRef.current = null;
+    manualResizeRef.current = null;
+    manualMoveRef.current = null;
     setBatchFileName("");
     setBatchOriginalPreviewUrl("");
     setBatchQuickText("");
@@ -1544,17 +1909,256 @@ export function AdminGlyphUploadForm({
     }, 3200);
   }
 
+  const HANDLE_R = 7;
+  const HANDLE_CURSORS: Record<string, string> = {
+    NW: "nw-resize", N: "n-resize", NE: "ne-resize",
+    E: "e-resize", SE: "se-resize", S: "s-resize", SW: "sw-resize", W: "w-resize",
+  };
+
+  function getHandlesForSel(sel: { x: number; y: number; w: number; h: number }) {
+    return [
+      ["NW", sel.x, sel.y], ["N", sel.x + sel.w / 2, sel.y], ["NE", sel.x + sel.w, sel.y],
+      ["E", sel.x + sel.w, sel.y + sel.h / 2],
+      ["SE", sel.x + sel.w, sel.y + sel.h], ["S", sel.x + sel.w / 2, sel.y + sel.h],
+      ["SW", sel.x, sel.y + sel.h], ["W", sel.x, sel.y + sel.h / 2],
+    ] as [ManualHandle, number, number][];
+  }
+
+  function getHandleAt(px: number, py: number) {
+    for (const sel of [...manualSelectionsRef.current].reverse()) {
+      for (const [handle, hx, hy] of getHandlesForSel(sel)) {
+        if (Math.abs(px - hx) <= HANDLE_R && Math.abs(py - hy) <= HANDLE_R) {
+          return { id: sel.id, handle, sel };
+        }
+      }
+    }
+    return null;
+  }
+
+  function applyResize(
+    orig: { x: number; y: number; w: number; h: number },
+    handle: ManualHandle, dx: number, dy: number
+  ) {
+    let { x, y, w, h } = orig;
+    if (handle.includes("N")) { y += dy; h -= dy; }
+    if (handle.includes("S")) { h += dy; }
+    if (handle.includes("W")) { x += dx; w -= dx; }
+    if (handle.includes("E")) { w += dx; }
+    if (w < 10) { w = 10; if (handle.includes("W")) x = orig.x + orig.w - 10; }
+    if (h < 10) { h = 10; if (handle.includes("N")) y = orig.y + orig.h - 10; }
+    return { x, y, w, h };
+  }
+
+  function redrawManualCanvas() {
+    const canvas = manualSelectionCanvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    const image = manualSourceImageRef.current;
+    if (!canvas || !ctx || !image) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    manualSelectionsRef.current.forEach((sel, i) => {
+      ctx.strokeStyle = "#b91c1c";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sel.x, sel.y, sel.w, sel.h);
+      ctx.fillStyle = "rgba(185,28,28,0.15)";
+      ctx.fillRect(sel.x, sel.y, sel.w, sel.h);
+      ctx.fillStyle = "#b91c1c";
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText(String(i + 1), sel.x + 4, sel.y + 15);
+      for (const [, hx, hy] of getHandlesForSel(sel)) {
+        const hs = HANDLE_R;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+        ctx.strokeStyle = "#b91c1c";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(hx - hs / 2, hy - hs / 2, hs, hs);
+      }
+    });
+    const d = manualDrawRef.current;
+    if (d) {
+      const x = Math.min(d.startX, d.curX), y = Math.min(d.startY, d.curY);
+      const w = Math.abs(d.curX - d.startX), h = Math.abs(d.curY - d.startY);
+      ctx.setLineDash([5, 3]);
+      ctx.strokeStyle = "#b91c1c";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      ctx.setLineDash([]);
+    }
+  }
+
+  function getManualPoint(e: PointerEvent<HTMLCanvasElement>) {
+    const canvas = manualSelectionCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(canvas.width, (e.clientX - rect.left) / rect.width * canvas.width)),
+      y: Math.max(0, Math.min(canvas.height, (e.clientY - rect.top) / rect.height * canvas.height)),
+    };
+  }
+
+  function getSelectionAt(px: number, py: number) {
+    for (const sel of [...manualSelectionsRef.current].reverse()) {
+      if (px >= sel.x && px <= sel.x + sel.w && py >= sel.y && py <= sel.y + sel.h) return sel;
+    }
+    return null;
+  }
+
+  function startManualDraw(e: PointerEvent<HTMLCanvasElement>) {
+    const p = getManualPoint(e);
+    if (!p) return;
+    const hit = getHandleAt(p.x, p.y);
+    if (hit) {
+      manualResizeRef.current = { id: hit.id, handle: hit.handle, orig: { ...hit.sel }, startX: p.x, startY: p.y };
+    } else {
+      const sel = getSelectionAt(p.x, p.y);
+      if (sel) {
+        manualMoveRef.current = { id: sel.id, origX: sel.x, origY: sel.y, startX: p.x, startY: p.y };
+      } else {
+        isManualDrawingRef.current = true;
+        manualDrawRef.current = { startX: p.x, startY: p.y, curX: p.x, curY: p.y };
+      }
+    }
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function moveManualDraw(e: PointerEvent<HTMLCanvasElement>) {
+    const p = getManualPoint(e);
+    if (!p) return;
+    const resize = manualResizeRef.current;
+    if (resize) {
+      const dx = p.x - resize.startX, dy = p.y - resize.startY;
+      const next = applyResize(resize.orig, resize.handle, dx, dy);
+      manualSelectionsRef.current = manualSelectionsRef.current.map((s) =>
+        s.id === resize.id ? { ...s, ...next } : s
+      );
+      redrawManualCanvas();
+      return;
+    }
+    const move = manualMoveRef.current;
+    if (move) {
+      const dx = p.x - move.startX, dy = p.y - move.startY;
+      const canvas = manualSelectionCanvasRef.current;
+      manualSelectionsRef.current = manualSelectionsRef.current.map((s) => {
+        if (s.id !== move.id) return s;
+        return {
+          ...s,
+          x: Math.max(0, Math.min((canvas?.width ?? Infinity) - s.w, move.origX + dx)),
+          y: Math.max(0, Math.min((canvas?.height ?? Infinity) - s.h, move.origY + dy)),
+        };
+      });
+      redrawManualCanvas();
+      return;
+    }
+    if (isManualDrawingRef.current && manualDrawRef.current) {
+      manualDrawRef.current = { ...manualDrawRef.current, curX: p.x, curY: p.y };
+      redrawManualCanvas();
+      return;
+    }
+    // 懸停時更新游標
+    const hit = getHandleAt(p.x, p.y);
+    if (manualSelectionCanvasRef.current) {
+      manualSelectionCanvasRef.current.style.cursor = hit
+        ? HANDLE_CURSORS[hit.handle]
+        : getSelectionAt(p.x, p.y) ? "move" : "crosshair";
+    }
+  }
+
+  function finishManualDraw(e: PointerEvent<HTMLCanvasElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    if (manualResizeRef.current) {
+      manualResizeRef.current = null;
+      setManualSelections([...manualSelectionsRef.current]);
+      redrawManualCanvas();
+      return;
+    }
+    if (manualMoveRef.current) {
+      manualMoveRef.current = null;
+      setManualSelections([...manualSelectionsRef.current]);
+      redrawManualCanvas();
+      return;
+    }
+    if (!isManualDrawingRef.current) return;
+    isManualDrawingRef.current = false;
+    const p = getManualPoint(e);
+    const d = manualDrawRef.current;
+    manualDrawRef.current = null;
+    if (p && d) {
+      const x = Math.min(d.startX, p.x), y = Math.min(d.startY, p.y);
+      const w = Math.abs(p.x - d.startX), h = Math.abs(p.y - d.startY);
+      if (w > 8 && h > 8) {
+        const next = [...manualSelectionsRef.current, { id: `m-${Date.now()}`, x, y, w, h }];
+        manualSelectionsRef.current = next;
+        setManualSelections(next);
+      }
+    }
+    redrawManualCanvas();
+  }
+
+  function removeManualSelection(id: string) {
+    const next = manualSelectionsRef.current.filter((s) => s.id !== id);
+    manualSelectionsRef.current = next;
+    setManualSelections(next);
+    redrawManualCanvas();
+  }
+
+  async function processManualSelections() {
+    if (!batchSourceFileRef.current || manualSelectionsRef.current.length === 0) {
+      setMessage("請先在圖片上匡選至少一個字");
+      return;
+    }
+    setIsBatchProcessing(true);
+    setMessage("正在處理手動匡選範圍...");
+    try {
+      const { imageData, inkLayer, width: analysisW, height: analysisH } = await buildBatchInkLayerFromFile(
+        batchSourceFileRef.current, "auto", currentUploadProcessOptions()
+      );
+      batchOriginalAnalysisRef.current = { imageData, width: analysisW, height: analysisH };
+      // 使用 manualImgDimensions（原圖自然尺寸），避免 overlay 關閉後 canvas ref 為 null
+      const imgW = manualImgDimensions?.w ?? manualSelectionCanvasRef.current?.width ?? analysisW;
+      const imgH = manualImgDimensions?.h ?? manualSelectionCanvasRef.current?.height ?? analysisH;
+      const scaleX = analysisW / imgW;
+      const scaleY = analysisH / imgH;
+      const images = await Promise.all(
+        manualSelectionsRef.current.map(async (sel, index) => {
+          const bounds: ImageBounds = {
+            x: Math.max(0, Math.round(sel.x * scaleX)),
+            y: Math.max(0, Math.round(sel.y * scaleY)),
+            width: Math.max(1, Math.min(analysisW, Math.round(sel.w * scaleX))),
+            height: Math.max(1, Math.min(analysisH, Math.round(sel.h * scaleY))),
+          };
+          const fileName = `${fileNameWithoutExtension(batchFileName || "manual")}_${String(index + 1).padStart(2, "0")}.png`;
+          const glyphFile = await fileFromInkBounds(inkLayer, analysisW, analysisH, bounds, fileName, currentUploadProcessOptions());
+          return { file: glyphFile, previewUrl: URL.createObjectURL(glyphFile), bounds };
+        })
+      );
+      setBatchItems(images.map((img, i) => ({
+        ...img,
+        id: `manual-${Date.now()}-${i}`,
+        char: "",
+        cropAdjustment: 0,
+        status: "idle" as const,
+      })));
+      setMessage(`已匡選 ${images.length} 個字，請依序輸入單字後批次上傳`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "手動匡選處理失敗");
+      setBatchItems([]);
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  }
+
   async function splitBatchFile(file: File) {
     setIsBatchProcessing(true);
     setMessage("正在自動拆字...");
     try {
       const expectedCount = Number(batchExpectedCount);
-      const splitImages = await splitImageToGlyphFiles(
+      const { images: splitImages, imageData, analysisWidth, analysisHeight } = await splitImageToGlyphFiles(
         file,
         batchDirection,
         Number.isInteger(expectedCount) && expectedCount > 1 ? expectedCount : 0,
         currentUploadProcessOptions()
       );
+      batchOriginalAnalysisRef.current = { imageData, width: analysisWidth, height: analysisHeight };
       setBatchItems(
         splitImages.map((image, index) => ({
           ...image,
@@ -1598,6 +2202,29 @@ export function AdminGlyphUploadForm({
     });
   }
 
+  async function updateBatchItemColorMode(id: string, mode: UploadColorMode | undefined) {
+    const analysis = batchOriginalAnalysisRef.current;
+    const item = batchItemsRef.current.find((i) => i.id === id);
+    if (!item) return;
+
+    let newPreviewUrl: string;
+    if (!mode || mode === "bw") {
+      newPreviewUrl = URL.createObjectURL(item.file);
+    } else if (analysis) {
+      const effectiveBounds = adjustImageBounds(item.bounds, analysis.width, analysis.height, item.cropAdjustment);
+      const previewFile = await fileFromImageDataBounds(analysis.imageData, analysis.width, analysis.height, effectiveBounds, item.file.name, mode);
+      newPreviewUrl = URL.createObjectURL(previewFile);
+    } else {
+      newPreviewUrl = item.previewUrl;
+    }
+
+    setBatchItems((items) => items.map((candidate) => {
+      if (candidate.id !== id) return candidate;
+      if (newPreviewUrl !== candidate.previewUrl) URL.revokeObjectURL(candidate.previewUrl);
+      return { ...candidate, colorMode: mode, previewUrl: newPreviewUrl };
+    }));
+  }
+
   function updateBatchChar(id: string, value: string, isComposing = false) {
     const char = isComposing ? value : onlyChinese(value).slice(0, 1);
     setBatchItems((items) => items.map((item) => (item.id === id ? { ...item, char, status: "idle", message: "" } : item)));
@@ -1638,25 +2265,48 @@ export function AdminGlyphUploadForm({
     });
   }
 
-  function handleBatchDragStart(event: DragEvent<HTMLElement>, id: string) {
+  const dragPointerRef = useRef<{ id: string } | null>(null);
+
+  function startBatchDrag(e: PointerEvent<HTMLButtonElement>, id: string) {
+    if (isBatchUploading || isBatchEditApplying) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragPointerRef.current = { id };
     setDraggingBatchId(id);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", id);
+    setDragOverBatchId(null);
   }
 
-  function handleBatchDragOver(event: DragEvent<HTMLDivElement>, id: string) {
-    event.preventDefault();
-    if (draggingBatchId === id) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const side = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
-    setDragOverBatchId(id);
-    setDragOverBatchSide(side);
+  function moveBatchDrag(e: PointerEvent<HTMLButtonElement>) {
+    if (!dragPointerRef.current) return;
+    const fromId = dragPointerRef.current.id;
+    const els = document.elementsFromPoint(e.clientX, e.clientY);
+    let targetId: string | null = null;
+    let side: "before" | "after" = "before";
+    for (const el of els) {
+      const itemId = (el as HTMLElement).dataset?.batchItemId;
+      if (itemId && itemId !== fromId) {
+        const rect = el.getBoundingClientRect();
+        side = e.clientY > rect.top + rect.height / 2 ? "after" : "before";
+        targetId = itemId;
+        break;
+      }
+    }
+    setDragOverBatchId(targetId);
+    if (targetId) setDragOverBatchSide(side);
   }
 
-  function handleBatchDrop(event: DragEvent<HTMLDivElement>, id: string) {
-    event.preventDefault();
-    const draggedId = event.dataTransfer.getData("text/plain") || draggingBatchId;
-    if (draggedId) moveBatchItem(draggedId, id, dragOverBatchId === id ? dragOverBatchSide : "before");
+  function endBatchDrag(e: PointerEvent<HTMLButtonElement>) {
+    if (!dragPointerRef.current) return;
+    const fromId = dragPointerRef.current.id;
+    const toId = dragOverBatchId;
+    const side = dragOverBatchSide;
+    dragPointerRef.current = null;
+    setDraggingBatchId(null);
+    setDragOverBatchId(null);
+    if (toId && toId !== fromId) moveBatchItem(fromId, toId, side);
+  }
+
+  function cancelBatchDrag() {
+    dragPointerRef.current = null;
     setDraggingBatchId(null);
     setDragOverBatchId(null);
   }
@@ -1718,8 +2368,10 @@ export function AdminGlyphUploadForm({
   }
 
   function startBatchEdit(id: string) {
+    const item = batchItemsRef.current.find((i) => i.id === id);
     batchEditUndoStackRef.current = [];
     setBatchEditUndoCount(0);
+    setBatchEditColorMode(item?.colorMode ?? batchColorMode);
     setBatchEditingId(id);
   }
 
@@ -1745,15 +2397,14 @@ export function AdminGlyphUploadForm({
     const canvas = batchEditCanvasRef.current;
     const point = getBatchEditPoint(e);
     if (!canvas || !point) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true }) ?? canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.save();
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, batchEditEraserSize, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    if (batchEditColorMode !== "bw") {
+      contentAwareFillAt(ctx, point.x, point.y, batchEditEraserSize);
+    } else {
+      featheredWhiteFillAt(ctx, point.x, point.y, batchEditEraserSize);
+    }
   }
 
   function pushBatchEditUndoState() {
@@ -1776,6 +2427,7 @@ export function AdminGlyphUploadForm({
   }
 
   function moveBatchEditErase(e: PointerEvent<HTMLCanvasElement>) {
+    updateEraserCursorDiv(batchEraserCursorRef.current, batchEditCanvasRef.current, e, batchEditEraserSize);
     if (!isErasingBatchEditRef.current) return;
     eraseBatchEditAt(e);
   }
@@ -1805,7 +2457,9 @@ export function AdminGlyphUploadForm({
 
     setIsBatchEditApplying(true);
     try {
-      const normalizedFile = await canvasToCenteredGlyphFile(canvas, item.file.name);
+      const normalizedFile = batchEditColorMode === "bw"
+        ? await canvasToCenteredGlyphFile(canvas, item.file.name)
+        : await canvasToCenteredColorFile(canvas, item.file.name, batchEditColorMode);
       const nextPreviewUrl = URL.createObjectURL(normalizedFile);
       setBatchItems((items) =>
         items.map((candidate) => {
@@ -1840,21 +2494,18 @@ export function AdminGlyphUploadForm({
       )
     );
     try {
-      const nextAdjustment = Math.max(-4, Math.min(6, item.cropAdjustment + delta));
-      const { inkLayer, width, height } = await buildBatchInkLayerFromFile(
+      const nextAdjustment = item.cropAdjustment + delta;
+      const effectiveColorMode = item.colorMode ?? batchColorMode;
+      const { imageData, inkLayer, width, height } = await buildBatchInkLayerFromFile(
         sourceFile,
         batchDirection,
         currentUploadProcessOptions()
       );
+      batchOriginalAnalysisRef.current = { imageData, width, height };
       const adjustedBounds = adjustImageBounds(item.bounds, width, height, nextAdjustment);
-      const nextFile = await fileFromInkBounds(
-        inkLayer,
-        width,
-        height,
-        adjustedBounds,
-        item.file.name,
-        currentUploadProcessOptions()
-      );
+      const nextFile = effectiveColorMode === "bw"
+        ? await fileFromInkBounds(inkLayer, width, height, adjustedBounds, item.file.name, currentUploadProcessOptions())
+        : await fileFromImageDataBounds(imageData, width, height, adjustedBounds, item.file.name, effectiveColorMode);
       const nextPreviewUrl = URL.createObjectURL(nextFile);
       setBatchItems((items) =>
         items.map((candidate) => {
@@ -1870,6 +2521,36 @@ export function AdminGlyphUploadForm({
           };
         })
       );
+
+      // 若此項目正在擦除 overlay 中開啟，同步更新 canvas
+      if (batchEditingId === id) {
+        const canvas = batchEditCanvasRef.current;
+        const ctx = canvas?.getContext("2d");
+        if (canvas && ctx) {
+          batchEditUndoStackRef.current = [];
+          setBatchEditUndoCount(0);
+          let reloadUrl: string;
+          if (batchEditColorMode !== "bw") {
+            const analysis = batchOriginalAnalysisRef.current;
+            const previewFile = analysis
+              ? await fileFromImageDataBounds(analysis.imageData, analysis.width, analysis.height, adjustedBounds, nextFile.name, batchEditColorMode)
+              : nextFile;
+            reloadUrl = URL.createObjectURL(previewFile);
+          } else {
+            reloadUrl = URL.createObjectURL(nextFile);
+          }
+          const img = new window.Image();
+          img.onload = () => {
+            URL.revokeObjectURL(reloadUrl);
+            canvas.width = img.naturalWidth || normalizedUploadImageSize;
+            canvas.height = img.naturalHeight || normalizedUploadImageSize;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          };
+          img.src = reloadUrl;
+        }
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "重新裁切失敗");
       setBatchItems((items) =>
@@ -1946,6 +2627,34 @@ export function AdminGlyphUploadForm({
 
     setIsBatchUploading(true);
     setMessage("批次上傳中...");
+
+    // 建立字組並上傳原圖
+    let batchSetId: number | null = null;
+    if (batchSourceFileRef.current && uploadEndpoint === "/api/glyphs/upload") {
+      try {
+        const setFormData = new FormData();
+        setFormData.set("sourceImage", batchSourceFileRef.current, batchFileName || "source.jpg");
+        setFormData.set("visibility", uploadVisibility);
+        const setRes = await fetch("/api/glyph-sets", { method: "POST", body: setFormData });
+        if (setRes.ok) {
+          const setJson = await setRes.json() as { id: number };
+          batchSetId = setJson.id;
+        }
+      } catch { /* 字組建立失敗不影響上傳 */ }
+    }
+
+    // Pre-load original imageData if any item needs non-bw color
+    const needsOriginalData = batchItems.some((item) => (item.colorMode ?? batchColorMode) !== "bw");
+    let originalImageAnalysis: { imageData: ImageData; width: number; height: number } | null = null;
+    if (needsOriginalData && batchSourceFileRef.current) {
+      try {
+        const { imageData, width, height } = await buildBatchInkLayerFromFile(
+          batchSourceFileRef.current, batchDirection, currentUploadProcessOptions()
+        );
+        originalImageAnalysis = { imageData, width, height };
+      } catch { /* fall back to bw */ }
+    }
+
     let successCount = 0;
     try {
       for (const item of batchItems) {
@@ -1954,6 +2663,15 @@ export function AdminGlyphUploadForm({
             candidate.id === item.id ? { ...candidate, status: "uploading", message: "上傳中" } : candidate
           )
         );
+        const effectiveColorMode = item.colorMode ?? batchColorMode;
+        let fileToUpload = item.file;
+        if (effectiveColorMode !== "bw" && originalImageAnalysis) {
+          const { imageData, width, height } = originalImageAnalysis;
+          const effectiveBounds = adjustImageBounds(item.bounds, width, height, item.cropAdjustment);
+          try {
+            fileToUpload = await fileFromImageDataBounds(imageData, width, height, effectiveBounds, item.file.name, effectiveColorMode);
+          } catch { /* fall back to bw */ }
+        }
         const formData = new FormData();
         formData.set("char", onlyChinese(item.char).slice(0, 1));
         formData.set("author", onlyChinese(uploadAuthor));
@@ -1964,8 +2682,9 @@ export function AdminGlyphUploadForm({
         formData.set("qualityScore", uploadQualityScore);
         formData.set("visibility", uploadVisibility);
         formData.set("processingMs", String(uploadProcessingMs));
-        formData.set("file", item.file, item.file.name);
-        const thumbnailFile = await imageFileToThumbnailPng(item.file, `${fileNameWithoutExtension(item.file.name)}_thumb.png`);
+        if (batchSetId) formData.set("setId", String(batchSetId));
+        formData.set("file", fileToUpload, fileToUpload.name);
+        const thumbnailFile = await imageFileToThumbnailPng(fileToUpload, `${fileNameWithoutExtension(fileToUpload.name)}_thumb.png`);
         formData.set("thumbnailFile", thumbnailFile, thumbnailFile.name);
 
         const res = await fetch(uploadEndpoint, {
@@ -2117,11 +2836,11 @@ export function AdminGlyphUploadForm({
         inkStrength: uploadInkStrength,
         foregroundSeparation: uploadForegroundSeparation,
         noiseReduction: uploadNoiseReduction,
-      });
+      }, uploadColorMode);
     }, 180);
 
     return () => window.clearTimeout(timeoutId);
-  }, [uploadSourceFile, uploadEdgeSoftness, uploadInkStrength, uploadForegroundSeparation, uploadNoiseReduction]);
+  }, [uploadSourceFile, uploadEdgeSoftness, uploadInkStrength, uploadForegroundSeparation, uploadNoiseReduction, uploadColorMode]);
 
   function getUploadPreviewPoint(e: PointerEvent<HTMLCanvasElement>) {
     const canvas = uploadEditCanvasRef.current;
@@ -2137,15 +2856,14 @@ export function AdminGlyphUploadForm({
     const canvas = uploadEditCanvasRef.current;
     const point = getUploadPreviewPoint(e);
     if (!canvas || !point) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true }) ?? canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.save();
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, uploadEraserSize, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    if (uploadColorMode !== "bw") {
+      contentAwareFillAt(ctx, point.x, point.y, uploadEraserSize);
+    } else {
+      featheredWhiteFillAt(ctx, point.x, point.y, uploadEraserSize);
+    }
   }
 
   function pushUploadUndoState() {
@@ -2169,7 +2887,20 @@ export function AdminGlyphUploadForm({
     eraseUploadPreviewAt(e);
   }
 
+  function updateEraserCursorDiv(div: HTMLDivElement | null, canvas: HTMLCanvasElement | null, e: PointerEvent<HTMLCanvasElement>, size: number) {
+    if (!div || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scale = rect.width / canvas.width;
+    const r = size * scale;
+    div.style.left = `${e.clientX - r}px`;
+    div.style.top = `${e.clientY - r}px`;
+    div.style.width = `${r * 2}px`;
+    div.style.height = `${r * 2}px`;
+    div.style.display = "block";
+  }
+
   function moveUploadPreviewErase(e: PointerEvent<HTMLCanvasElement>) {
+    updateEraserCursorDiv(uploadEraserCursorRef.current, uploadEditCanvasRef.current, e, uploadEraserSize);
     if (!isErasingUploadPreviewRef.current) return;
     eraseUploadPreviewAt(e);
   }
@@ -2194,6 +2925,36 @@ export function AdminGlyphUploadForm({
     setUploadUndoCount(uploadUndoStackRef.current.length);
   }
 
+  async function loadExistingGlyphForEdit() {
+    if (!replaceGlyph?.imageUrl) return;
+    setIsProcessingUploadImage(true);
+    setMessage("載入現有字圖...");
+    try {
+      const res = await fetch(replaceGlyph.imageUrl);
+      if (!res.ok) throw new Error("無法載入字圖");
+      const blob = await res.blob();
+      const ext = blob.type.includes("png") ? "png" : blob.type.includes("jpeg") || blob.type.includes("jpg") ? "jpg" : "png";
+      const fileName = `${replaceGlyph.char}_edit.${ext}`;
+      const file = new File([blob], fileName, { type: blob.type || "image/png" });
+      const objectUrl = URL.createObjectURL(file);
+      setProcessedUploadFile(file);
+      setUploadFileName(fileName);
+      setUploadColorMode("original");
+      setUploadPreviewUrl((currentUrl) => {
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        return objectUrl;
+      });
+      uploadUndoStackRef.current = [];
+      setUploadUndoCount(0);
+      setUploadProcessingMs(0);
+      setMessage("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "載入字圖失敗");
+    } finally {
+      setIsProcessingUploadImage(false);
+    }
+  }
+
   function startUploadEdit() {
     if (!processedUploadFile || !uploadPreviewUrl) return;
     uploadUndoStackRef.current = [];
@@ -2215,7 +2976,9 @@ export function AdminGlyphUploadForm({
 
     setIsUploadEditApplying(true);
     try {
-      const nextFile = await canvasToCenteredGlyphFile(canvas, processedUploadFile.name);
+      const nextFile = uploadColorMode === "bw"
+        ? await canvasToCenteredGlyphFile(canvas, processedUploadFile.name)
+        : await canvasToCenteredColorFile(canvas, processedUploadFile.name, uploadColorMode);
       if (uploadPreviewUrl) {
         URL.revokeObjectURL(uploadPreviewUrl);
       }
@@ -2305,23 +3068,71 @@ export function AdminGlyphUploadForm({
     };
   }, [batchOriginalPreviewUrl]);
 
+  // Effect 1: 載入原圖，取得尺寸（不依賴 overlay 狀態）
+  useEffect(() => {
+    if (!batchOriginalPreviewUrl || batchDirection !== "manual") return;
+    const img = new window.Image();
+    img.onload = () => {
+      manualSourceImageRef.current = img;
+      setManualImgDimensions({ w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.src = batchOriginalPreviewUrl;
+  }, [batchOriginalPreviewUrl, batchDirection]);
+
+  // Effect 2: Overlay 開啟時初始化互動 canvas
+  useEffect(() => {
+    if (!isManualOverlayOpen || !manualSourceImageRef.current) return;
+    const img = manualSourceImageRef.current;
+    const canvas = manualSelectionCanvasRef.current;
+    if (canvas) {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+    }
+    redrawManualCanvas();
+  }, [isManualOverlayOpen]);
+
   useEffect(() => {
     if (!batchEditingId) return;
-    const item = batchItems.find((candidate) => candidate.id === batchEditingId);
+    const item = batchItemsRef.current.find((candidate) => candidate.id === batchEditingId);
     const canvas = batchEditCanvasRef.current;
     if (!item || !canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const image = new window.Image();
-    image.onload = () => {
-      canvas.width = image.naturalWidth || normalizedUploadImageSize;
-      canvas.height = image.naturalHeight || normalizedUploadImageSize;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    };
-    image.src = item.previewUrl;
-  }, [batchEditingId, batchItems]);
+    batchEditUndoStackRef.current = [];
+    setBatchEditUndoCount(0);
+
+    async function load() {
+      let objectUrl: string;
+      let needsRevoke = false;
+      if (batchEditColorMode === "bw") {
+        objectUrl = URL.createObjectURL(item!.file);
+        needsRevoke = true;
+      } else {
+        const analysis = batchOriginalAnalysisRef.current;
+        if (analysis) {
+          const effectiveBounds = adjustImageBounds(item!.bounds, analysis.width, analysis.height, item!.cropAdjustment);
+          const previewFile = await fileFromImageDataBounds(analysis.imageData, analysis.width, analysis.height, effectiveBounds, item!.file.name, batchEditColorMode);
+          objectUrl = URL.createObjectURL(previewFile);
+          needsRevoke = true;
+        } else {
+          objectUrl = URL.createObjectURL(item!.file);
+          needsRevoke = true;
+        }
+      }
+      const image = new window.Image();
+      image.onload = () => {
+        if (needsRevoke) URL.revokeObjectURL(objectUrl);
+        if (!canvas || !ctx) return;
+        canvas.width = image.naturalWidth || normalizedUploadImageSize;
+        canvas.height = image.naturalHeight || normalizedUploadImageSize;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      };
+      image.src = objectUrl;
+    }
+    void load();
+  }, [batchEditingId, batchEditColorMode]);
 
   useEffect(() => {
     return () => {
@@ -2606,20 +3417,21 @@ export function AdminGlyphUploadForm({
               <div className="font-bold text-stone-900">圖片處理</div>
               <div className="text-xs text-stone-500">先選擇來源圖片、拆字方向與品質，再重拆檢查結果。</div>
             </div>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
               {[
                 ["auto", "自動"],
                 ["horizontal", "橫排"],
                 ["vertical", "直排"],
                 ["grid", "多行"],
                 ["ruled", "格線"],
+                ["manual", "手動匡選"],
               ].map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setBatchDirection(value as BatchSplitDirection)}
+                  onClick={() => { setBatchDirection(value as BatchSplitDirection); if (value !== "manual") { manualSelectionsRef.current = []; setManualSelections([]); } }}
                   disabled={isBatchProcessing || isBatchUploading}
-                  className={`min-h-10 rounded-xl border px-3 text-sm font-bold ${
+                  className={`min-h-10 rounded-xl border px-2 text-xs font-bold sm:text-sm ${
                     batchDirection === value
                       ? "border-red-800 bg-red-800 text-white"
                       : "border-stone-300 bg-stone-50 text-stone-700 hover:border-red-700"
@@ -2638,7 +3450,7 @@ export function AdminGlyphUploadForm({
               className="min-h-12 w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-3 text-sm disabled:opacity-70"
             />
             {batchFileName && <div className="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">{batchFileName}</div>}
-            {batchOriginalPreviewUrl && (
+            {batchOriginalPreviewUrl && batchDirection !== "manual" && (
               <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
                 <div className="mb-2 text-xs font-bold text-stone-500">原圖預覽</div>
                 <div className="flex max-h-64 items-center justify-center overflow-hidden rounded-lg border border-stone-200 bg-white">
@@ -2650,7 +3462,47 @@ export function AdminGlyphUploadForm({
                 </div>
               </div>
             )}
-            <div className="grid gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
+            {batchDirection === "manual" && batchOriginalPreviewUrl && (
+              <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2 text-xs font-bold text-stone-500">
+                  <span>{manualSelections.length > 0 ? `已選 ${manualSelections.length} 個範圍` : "尚未匡選任何字"}</span>
+                  {manualSelections.length > 0 && (
+                    <button type="button" onClick={() => { manualSelectionsRef.current = []; setManualSelections([]); }} disabled={isBatchProcessing} className="text-red-600 hover:text-red-800 disabled:opacity-50">全部清除</button>
+                  )}
+                </div>
+                <div className="relative overflow-hidden rounded-lg border border-stone-200 bg-white">
+                  <img src={batchOriginalPreviewUrl} alt="原圖預覽" className="max-h-40 w-full object-contain" />
+                  {manualSelections.length > 0 && manualImgDimensions && (
+                    <svg
+                      className="pointer-events-none absolute inset-0 h-full w-full"
+                      viewBox={`0 0 ${manualImgDimensions.w} ${manualImgDimensions.h}`}
+                      preserveAspectRatio="xMidYMid meet"
+                    >
+                      {manualSelections.map((sel, i) => {
+                        const sw = Math.max(2, manualImgDimensions.w * 0.007);
+                        const fs = manualImgDimensions.w * 0.055;
+                        return (
+                          <g key={sel.id}>
+                            <rect x={sel.x} y={sel.y} width={sel.w} height={sel.h} fill="rgba(185,28,28,0.18)" stroke="#b91c1c" strokeWidth={sw} />
+                            <text x={sel.x + sw * 2} y={sel.y + fs} fill="#b91c1c" fontSize={fs} fontWeight="bold">{i + 1}</text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsManualOverlayOpen(true)}
+                  disabled={isBatchProcessing || isBatchUploading}
+                  className="mt-2 inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                  開啟全螢幕匡選
+                </button>
+              </div>
+            )}
+            {batchDirection !== "manual" && <div className="grid gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-bold text-stone-700">拆字品質模板</span>
                 {uploadQualityPresets.map((preset) => (
@@ -2692,28 +3544,40 @@ export function AdminGlyphUploadForm({
                   />
                 </label>
               ))}
-            </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2">
-              <input
-                type="number"
-                min="2"
-                max="60"
-                value={batchExpectedCount}
-                onChange={(e) => updateBatchExpectedCount(e.target.value)}
-                placeholder="預期字數，可留空"
-                disabled={isBatchProcessing || isBatchUploading}
-                className="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
-              />
+            </div>}
+            {batchDirection !== "manual" ? (
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-xl border border-stone-200 bg-stone-50 p-2">
+                <input
+                  type="number"
+                  min="2"
+                  max="60"
+                  value={batchExpectedCount}
+                  onChange={(e) => updateBatchExpectedCount(e.target.value)}
+                  placeholder="預期字數，可留空"
+                  disabled={isBatchProcessing || isBatchUploading}
+                  className="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-3 py-3 outline-none focus:border-red-700 disabled:opacity-70"
+                />
+                <button
+                  type="button"
+                  onClick={() => void resplitBatchFile()}
+                  disabled={isBatchProcessing || isBatchUploading || !batchSourceFileRef.current}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isBatchProcessing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Scissors className="h-4 w-4" />}
+                  重拆
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={() => void resplitBatchFile()}
-                disabled={isBatchProcessing || isBatchUploading || !batchSourceFileRef.current}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => void processManualSelections()}
+                disabled={isBatchProcessing || isBatchUploading || manualSelections.length === 0}
+                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-stone-800 px-4 font-bold text-white hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isBatchProcessing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Scissors className="h-4 w-4" />}
-                重拆
+                {isBatchProcessing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                確認匡選（{manualSelections.length} 個）
               </button>
-            </div>
+            )}
           </div>
         )}
         {(uploadMode === "single" || isReplacingGlyph) && (
@@ -2744,6 +3608,28 @@ export function AdminGlyphUploadForm({
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {metadataFields}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-bold text-stone-700">整批圖片模式</span>
+              {([
+                ["bw", "轉黑白"],
+                ["grayscale", "灰階"],
+                ["original", "原圖"],
+              ] as [UploadColorMode, string][]).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => void changeBatchColorMode(mode)}
+                  disabled={isBatchUploading}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-bold ${
+                    batchColorMode === mode
+                      ? "border-red-800 bg-red-800 text-white"
+                      : "border-stone-300 text-stone-700 hover:border-red-700 hover:text-red-800"
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
               {visibilityControl}
@@ -2821,13 +3707,9 @@ export function AdminGlyphUploadForm({
                   return (
                   <div
                     key={item.id}
+                    data-batch-item-id={item.id}
                     tabIndex={0}
                     onKeyDown={(event) => handleBatchCardKeyDown(event, item.id)}
-                    onDragOver={(event) => handleBatchDragOver(event, item.id)}
-                    onDragLeave={() => {
-                      if (dragOverBatchId === item.id) setDragOverBatchId(null);
-                    }}
-                    onDrop={(event) => handleBatchDrop(event, item.id)}
                     className={`relative rounded-xl border bg-white p-2 transition ${
                       draggingBatchId === item.id
                         ? "border-red-700 opacity-70"
@@ -2848,14 +3730,12 @@ export function AdminGlyphUploadForm({
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            draggable={!isBatchUploading && !isBatchEditApplying}
-                            onDragStart={(event) => handleBatchDragStart(event, item.id)}
-                            onDragEnd={() => {
-                              setDraggingBatchId(null);
-                              setDragOverBatchId(null);
-                            }}
                             disabled={isBatchUploading || isBatchEditApplying}
-                            className="inline-flex h-7 w-7 cursor-grab items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                            onPointerDown={(e) => startBatchDrag(e, item.id)}
+                            onPointerMove={moveBatchDrag}
+                            onPointerUp={endBatchDrag}
+                            onPointerCancel={cancelBatchDrag}
+                            className="inline-flex h-7 w-7 touch-none cursor-grab items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
                             aria-label={`拖曳排序第 ${index + 1} 個字`}
                             title="拖曳排序"
                           >
@@ -2878,7 +3758,7 @@ export function AdminGlyphUploadForm({
                         <button
                           type="button"
                           onClick={() => void adjustBatchCrop(item.id, -1)}
-                          disabled={isBatchUploading || isBatchEditApplying || item.cropAdjustment <= -4}
+                          disabled={isBatchUploading || isBatchEditApplying}
                           className="inline-flex h-8 min-w-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={`縮小第 ${index + 1} 個字的裁切範圍`}
                           title="縮小裁切範圍"
@@ -2888,7 +3768,7 @@ export function AdminGlyphUploadForm({
                         <button
                           type="button"
                           onClick={() => void adjustBatchCrop(item.id, 1)}
-                          disabled={isBatchUploading || isBatchEditApplying || item.cropAdjustment >= 6}
+                          disabled={isBatchUploading || isBatchEditApplying}
                           className="inline-flex h-8 min-w-0 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={`放大第 ${index + 1} 個字的裁切範圍`}
                           title="放大裁切範圍"
@@ -2945,6 +3825,35 @@ export function AdminGlyphUploadForm({
                       className={`min-h-10 w-full rounded-lg border bg-stone-50 px-2 text-center text-lg font-bold outline-none focus:border-red-700 disabled:opacity-70 ${batchMissingCharIds.has(item.id) ? "border-red-500" : "border-stone-300"}`}
                       autoComplete="off"
                     />
+                    <div className="mt-1 flex gap-1">
+                      {([
+                        ["bw", "黑白"],
+                        ["grayscale", "灰階"],
+                        ["original", "原圖"],
+                      ] as [UploadColorMode, string][]).map(([mode, label]) => {
+                        const effective = item.colorMode ?? batchColorMode;
+                        const isActive = mode === effective;
+                        const isOverride = item.colorMode !== undefined && mode === item.colorMode;
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => void updateBatchItemColorMode(item.id, mode === item.colorMode ? undefined : mode)}
+                            disabled={isBatchUploading}
+                            title={isOverride ? "已覆蓋整批設定，點擊恢復" : label}
+                            className={`flex-1 rounded-lg border py-1 text-[10px] font-bold leading-none ${
+                              isActive
+                                ? isOverride
+                                  ? "border-amber-600 bg-amber-50 text-amber-700"
+                                  : "border-red-800 bg-red-800 text-white"
+                                : "border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-600"
+                            } disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                     {item.message && (
                       <div className={`mt-2 truncate text-xs ${item.status === "error" ? "text-red-700" : "text-stone-500"}`}>
                         {item.message}
@@ -2971,22 +3880,31 @@ export function AdminGlyphUploadForm({
             {replaceGlyph?.imageUrl && (
               <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
                 <div className="mb-2 flex items-center justify-between gap-2 text-xs text-stone-500">
-                  <span className="truncate">原本的字圖</span>
+                  <span className="truncate">現有字圖</span>
                   <span className="shrink-0">ID {replaceGlyph.id}</span>
                 </div>
                 <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-white">
                   <img
                     src={replaceGlyph.imageUrl}
-                    alt={`${replaceGlyph.char} 原本的字圖`}
+                    alt={`${replaceGlyph.char} 現有字圖`}
                     className="max-h-full max-w-full object-contain p-4"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void loadExistingGlyphForEdit()}
+                  disabled={isUploading || isProcessingUploadImage}
+                  className="mt-2 inline-flex w-full min-h-10 items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2 text-sm font-bold text-stone-700 hover:border-red-700 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isProcessingUploadImage ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                  載入並直接編輯字圖
+                </button>
               </div>
             )}
 
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
               <div className="mb-2 flex items-center justify-between gap-2 text-xs text-stone-500">
-                <span className="truncate">{uploadFileName || (isReplacingGlyph ? "新的 Canvas 預覽" : "黑白預覽")}</span>
+                <span className="truncate">{uploadFileName || (isReplacingGlyph ? "新的 Canvas 預覽" : uploadColorMode === "bw" ? "黑白預覽" : uploadColorMode === "grayscale" ? "灰階預覽" : "原圖預覽")}</span>
                 <span className="shrink-0">
                   {uploadPreviewDimensions
                     ? `${uploadPreviewDimensions.width}x${uploadPreviewDimensions.height}`
@@ -3035,7 +3953,7 @@ export function AdminGlyphUploadForm({
                       <span className="px-4 text-center text-sm text-stone-500">
                         {isReplacingGlyph
                           ? "未選擇新圖檔時會保留原圖，只儲存左側資料。"
-                          : "選擇或拍攝圖檔後，這裡會顯示黑白化與裁放後的預覽。"}
+                          : "選擇或拍攝圖檔後，這裡會顯示處理後的預覽。"}
                       </span>
                     )}
                   </div>
@@ -3043,6 +3961,29 @@ export function AdminGlyphUploadForm({
               </div>
               {uploadOriginalPreviewUrl && (
                 <div className="mt-3 grid gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-stone-700">圖片模式</span>
+                    {([
+                      ["bw", "轉黑白"],
+                      ["grayscale", "灰階"],
+                      ["original", "原圖"],
+                    ] as [UploadColorMode, string][]).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setUploadColorMode(mode)}
+                        disabled={isUploading || isProcessingUploadImage || isUploadEditing}
+                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${
+                          uploadColorMode === mode
+                            ? "border-red-800 bg-red-800 text-white"
+                            : "border-stone-300 text-stone-700 hover:border-red-700 hover:text-red-800"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {uploadColorMode === "bw" && <>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-bold text-stone-700">品質模板</span>
                     {uploadQualityPresets.map((preset) => (
@@ -3122,6 +4063,7 @@ export function AdminGlyphUploadForm({
                       className="accent-red-800"
                     />
                   </label>
+                  </>}
                 </div>
               )}
             </div>
@@ -3169,22 +4111,29 @@ export function AdminGlyphUploadForm({
               </button>
             </div>
 
-            <div className="absolute bottom-3 left-1/2 z-10 flex w-[min(520px,calc(100%-1.5rem))] -translate-x-1/2 items-center gap-3 rounded-xl border border-stone-200 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
-              <Eraser className={`h-5 w-5 shrink-0 ${isErasingUploadPreview ? "text-red-700" : "text-stone-600"}`} />
-              <input
-                type="range"
-                min="8"
-                max="120"
-                value={uploadEraserSize}
-                onChange={(e) => setUploadEraserSize(Number(e.target.value))}
-                disabled={isUploadEditApplying}
-                className="min-w-0 flex-1 accent-red-800"
-                aria-label="擦除大小"
-              />
-              <span className="w-11 text-right text-xs tabular-nums text-stone-500">{uploadEraserSize}px</span>
+            <div className="absolute bottom-3 left-1/2 z-10 flex w-[min(560px,calc(100%-1.5rem))] -translate-x-1/2 flex-col gap-2 rounded-xl border border-stone-200 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
+              <div className="flex items-center gap-3">
+                <Eraser className={`h-5 w-5 shrink-0 ${isErasingUploadPreview ? "text-red-700" : "text-stone-600"}`} />
+                <input
+                  type="range"
+                  min="8"
+                  max="120"
+                  value={uploadEraserSize}
+                  onChange={(e) => setUploadEraserSize(Number(e.target.value))}
+                  disabled={isUploadEditApplying}
+                  className="min-w-0 flex-1 accent-red-800"
+                  aria-label="擦除大小"
+                />
+                <span className="w-11 text-right text-xs tabular-nums text-stone-500">{uploadEraserSize}px</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {([["bw", "黑白"], ["grayscale", "灰階"], ["original", "原圖"]] as [UploadColorMode, string][]).map(([mode, label]) => (
+                  <button key={mode} type="button" onClick={() => setUploadColorMode(mode)} disabled={isUploadEditApplying} className={`rounded-lg border px-2 py-1 text-xs font-bold ${uploadColorMode === mode ? "border-red-800 bg-red-800 text-white" : "border-stone-300 text-stone-600 hover:border-red-700 hover:text-red-800"} disabled:opacity-50`}>{label}</button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex h-full w-full items-center justify-center overflow-auto p-3 pt-16 pb-20 sm:p-5 sm:pt-16 sm:pb-20">
+            <div className="flex h-full w-full items-center justify-center overflow-auto p-3 pt-16 pb-24 sm:p-5 sm:pt-16 sm:pb-24">
               <canvas
                 ref={uploadEditCanvasRef}
                 width={uploadPreviewSize}
@@ -3193,11 +4142,17 @@ export function AdminGlyphUploadForm({
                 onPointerMove={moveUploadPreviewErase}
                 onPointerUp={finishUploadPreviewErase}
                 onPointerCancel={finishUploadPreviewErase}
+                onPointerLeave={() => { if (uploadEraserCursorRef.current) uploadEraserCursorRef.current.style.display = "none"; }}
                 className="max-h-full max-w-full touch-none bg-white shadow-lg"
-                style={{ cursor: eraserCursor }}
+                style={{ cursor: "none" }}
                 aria-label="全螢幕編輯單張圖片"
               />
             </div>
+            <div
+              ref={uploadEraserCursorRef}
+              className="pointer-events-none fixed z-[51] rounded-full border-2 border-red-600/75"
+              style={{ display: "none", boxShadow: "0 0 0 1px rgba(255,255,255,0.6)" }}
+            />
           </div>
         </div>
       )}
@@ -3242,22 +4197,32 @@ export function AdminGlyphUploadForm({
               </button>
             </div>
 
-            <div className="absolute bottom-3 left-1/2 z-10 flex w-[min(520px,calc(100%-1.5rem))] -translate-x-1/2 items-center gap-3 rounded-xl border border-stone-200 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
-              <Eraser className={`h-5 w-5 shrink-0 ${isErasingBatchEdit ? "text-red-700" : "text-stone-600"}`} />
-              <input
-                type="range"
-                min="8"
-                max="120"
-                value={batchEditEraserSize}
-                onChange={(e) => setBatchEditEraserSize(Number(e.target.value))}
-                disabled={isBatchEditApplying}
-                className="min-w-0 flex-1 accent-red-800"
-                aria-label="批次編輯擦除大小"
-              />
-              <span className="w-11 text-right text-xs tabular-nums text-stone-500">{batchEditEraserSize}px</span>
+            <div className="absolute bottom-3 left-1/2 z-10 flex w-[min(560px,calc(100%-1.5rem))] -translate-x-1/2 flex-col gap-2 rounded-xl border border-stone-200 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
+              <div className="flex items-center gap-3">
+                <Eraser className={`h-5 w-5 shrink-0 ${isErasingBatchEdit ? "text-red-700" : "text-stone-600"}`} />
+                <input
+                  type="range"
+                  min="8"
+                  max="120"
+                  value={batchEditEraserSize}
+                  onChange={(e) => setBatchEditEraserSize(Number(e.target.value))}
+                  disabled={isBatchEditApplying}
+                  className="min-w-0 flex-1 accent-red-800"
+                  aria-label="批次編輯擦除大小"
+                />
+                <span className="w-11 text-right text-xs tabular-nums text-stone-500">{batchEditEraserSize}px</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => void adjustBatchCrop(editingBatchItem.id, -1)} disabled={isBatchEditApplying} className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-stone-300 text-stone-600 hover:border-red-700 hover:text-red-800 disabled:opacity-40" title="縮小截字範圍"><Minimize2 className="h-3.5 w-3.5" /></button>
+                <button type="button" onClick={() => void adjustBatchCrop(editingBatchItem.id, 1)} disabled={isBatchEditApplying} className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-stone-300 text-stone-600 hover:border-red-700 hover:text-red-800 disabled:opacity-40" title="放大截字範圍"><Maximize2 className="h-3.5 w-3.5" /></button>
+                <div className="mx-1 h-4 w-px bg-stone-200" />
+                {([["bw", "黑白"], ["grayscale", "灰階"], ["original", "原圖"]] as [UploadColorMode, string][]).map(([mode, label]) => (
+                  <button key={mode} type="button" onClick={() => setBatchEditColorMode(mode as UploadColorMode)} disabled={isBatchEditApplying} className={`rounded-lg border px-2 py-1 text-xs font-bold ${batchEditColorMode === mode ? "border-red-800 bg-red-800 text-white" : "border-stone-300 text-stone-600 hover:border-red-700 hover:text-red-800"} disabled:opacity-50`}>{label}</button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex h-full w-full items-center justify-center overflow-auto p-3 pt-16 pb-20 sm:p-5 sm:pt-16 sm:pb-20">
+            <div className="flex h-full w-full items-center justify-center overflow-auto p-3 pt-16 pb-24 sm:p-5 sm:pt-16 sm:pb-24">
               <canvas
                 ref={batchEditCanvasRef}
                 width={uploadPreviewSize}
@@ -3266,9 +4231,70 @@ export function AdminGlyphUploadForm({
                 onPointerMove={moveBatchEditErase}
                 onPointerUp={finishBatchEditErase}
                 onPointerCancel={finishBatchEditErase}
+                onPointerLeave={() => { if (batchEraserCursorRef.current) batchEraserCursorRef.current.style.display = "none"; }}
                 className="max-h-full max-w-full touch-none bg-white shadow-lg"
-                style={{ cursor: eraserCursor }}
+                style={{ cursor: "none" }}
                 aria-label="大版面編輯拆字圖片"
+              />
+            </div>
+            <div
+              ref={batchEraserCursorRef}
+              className="pointer-events-none fixed z-[51] rounded-full border-2 border-red-600/75"
+              style={{ display: "none", boxShadow: "0 0 0 1px rgba(255,255,255,0.6)" }}
+            />
+          </div>
+        </div>
+      )}
+      {isManualOverlayOpen && batchOriginalPreviewUrl && (
+        <div className="fixed inset-0 z-50 flex bg-stone-950/90 p-2 text-stone-900 backdrop-blur sm:p-4">
+          <div className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-2xl bg-stone-100 shadow-2xl">
+            <div className="absolute left-3 top-3 z-10 rounded-xl bg-white/90 px-3 py-2 text-xs text-stone-600 shadow-sm backdrop-blur">
+              <div className="font-bold text-stone-900">手動匡選</div>
+              <div>點擊拖曳選取字的範圍｜已選 {manualSelections.length} 個</div>
+            </div>
+            <div className="absolute right-3 top-3 z-10 flex items-center gap-2 rounded-xl border border-stone-200 bg-white/90 p-1 shadow-sm backdrop-blur">
+              {manualSelections.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { manualSelectionsRef.current = []; setManualSelections([]); redrawManualCanvas(); }}
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-bold text-stone-700 hover:bg-stone-100 hover:text-red-800"
+                  title="清除全部"
+                >
+                  <X className="h-4 w-4" />
+                  清除全部
+                </button>
+              )}
+              {manualSelections.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setIsManualOverlayOpen(false); void processManualSelections(); }}
+                  disabled={isBatchProcessing}
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-red-800 px-3 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="確認匡選"
+                >
+                  <Check className="h-4 w-4" />
+                  確認匡選（{manualSelections.length}）
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsManualOverlayOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-stone-800 text-white hover:bg-stone-900"
+                title="關閉"
+              >
+                <Minimize2 className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex h-full w-full items-center justify-center overflow-auto p-3 pt-16 pb-4 sm:p-5 sm:pt-16 sm:pb-6">
+              <canvas
+                ref={manualSelectionCanvasRef}
+                onPointerDown={startManualDraw}
+                onPointerMove={moveManualDraw}
+                onPointerUp={finishManualDraw}
+                onPointerCancel={finishManualDraw}
+                className="max-h-full max-w-full touch-none bg-white shadow-lg"
+                style={{ cursor: "crosshair" }}
+                aria-label="手動匡選畫布"
               />
             </div>
           </div>
